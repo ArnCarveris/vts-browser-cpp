@@ -347,10 +347,10 @@ void MainWindow::run()
         shouldClose = processEvents();
 
         vts::uint32 timeFrameStart = SDL_GetTicks();
+        SDL_GL_GetDrawableSize(window, &ro.width, &ro.height);
+        map->setWindowSize(ro.width, ro.height);
         try
         {
-            SDL_GL_GetDrawableSize(window, &ro.width, &ro.height);
-            map->setWindowSize(ro.width, ro.height);
             map->renderTickPrepare();
             map->renderTickRender();
         }

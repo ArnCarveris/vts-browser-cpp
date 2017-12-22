@@ -43,7 +43,6 @@ MapCreateOptions::MapCreateOptions() :
 
 MapOptions::MapOptions() :
     maxTexelToPixelScale(1.2),
-    maxTexelToPixelScaleBalancedAddition(3),
     viewExtentLimitScaleMin(0.00001175917), // 75 metres on earth
     viewExtentLimitScaleMax(2.35183443086), // 1.5e7 metres on earth
     viewExtentThresholdScaleLow(0.03135779241), // 200 000 metres on earth
@@ -68,6 +67,8 @@ MapOptions::MapOptions() :
     maxFetchRedirections(5),
     maxFetchRetries(5),
     fetchFirstRetryTimeOffset(1),
+    coarserLodOffset(3),
+    gridsLodOffset(5),
     navigationType(NavigationType::Quick),
     navigationMode(NavigationMode::Seamless),
     traverseMode(TraverseMode::Balanced),
@@ -75,18 +76,21 @@ MapOptions::MapOptions() :
     enableRuntimeResourceExpiration(false),
     enableArbitrarySriRequests(true),
     enableCameraNormalization(true),
+    enableLoadIntermediateLods(true),
+    enableLoadNeighbors(true),
     debugDetachedCamera(false),
     debugDisableVirtualSurfaces(false),
     debugDisableSri(true),
     debugSaveCorruptedFiles(true),
     debugFlatShading(false),
+    debugRenderOpaqueMeshes(true),
+    debugRenderTransparentMeshes(true),
     debugRenderSurrogates(false),
     debugRenderMeshBoxes(false),
     debugRenderTileBoxes(false),
     debugRenderObjectPosition(false),
     debugRenderTargetPosition(false),
-    debugRenderAltitudeShiftCorners(false),
-    debugRenderNoMeshes(false)
+    debugRenderAltitudeShiftCorners(false)
 {}
 
 } // namespace vts

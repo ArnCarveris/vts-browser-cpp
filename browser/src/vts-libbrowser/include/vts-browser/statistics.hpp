@@ -46,6 +46,7 @@ public:
 
     uint32 meshesRenderedTotal;
     uint32 meshesRenderedPerLod[MaxLods];
+    uint32 meshesRenderedGrids;
     uint32 metaNodesTraversedTotal;
     uint32 metaNodesTraversedPerLod[MaxLods];
 

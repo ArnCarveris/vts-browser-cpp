@@ -43,264 +43,7 @@ vec3 lowerUpperCombine(uint32 i)
     return res;
 }
 
-bool aabbTest(const vec3 aabb[2], const vec4 planes[6])
-{
-    for (uint32 i = 0; i < 6; i++)
-    {
-        const vec4 &p = planes[i]; // current plane
-        vec3 pv = vec3( // current p-vertex
-                aabb[!!(p[0] > 0)](0),
-                aabb[!!(p[1] > 0)](1),
-                aabb[!!(p[2] > 0)](2));
-        double d = dot(vec4to3(p), pv);
-        if (d < -p[3])
-            return false;
-    }
-    return true;
-}
-
-vec4 column(const mat4 &m, uint32 index)
-{
-    return vec4(m(index, 0), m(index, 1), m(index, 2), m(index, 3));
-}
-
-void frustumPlanes(const mat4 &vp, vec4 planes[6])
-{
-    vec4 c0 = column(vp, 0);
-    vec4 c1 = column(vp, 1);
-    vec4 c2 = column(vp, 2);
-    vec4 c3 = column(vp, 3);
-    planes[0] = c3 + c0;
-    planes[1] = c3 - c0;
-    planes[2] = c3 + c1;
-    planes[3] = c3 - c1;
-    planes[4] = c3 + c2;
-    planes[5] = c3 - c2;
-}
-
 } // namespace
-
-Validity MapImpl::reorderBoundLayers(const NodeInfo &nodeInfo,
-        uint32 subMeshIndex, BoundParamInfo::List &boundList, double priority)
-{
-    // prepare all layers
-    {
-        bool determined = true;
-        auto it = boundList.begin();
-        while (it != boundList.end())
-        {
-            switch (it->prepare(nodeInfo, this, subMeshIndex, priority))
-            {
-            case Validity::Invalid:
-                it = boundList.erase(it);
-                break;
-            case Validity::Indeterminate:
-                determined = false;
-                // no break here
-            case Validity::Valid:
-                it++;
-            }
-        }
-        if (!determined)
-            return Validity::Indeterminate;
-    }
-
-    // skip overlapping layers
-    std::reverse(boundList.begin(), boundList.end());
-    auto it = boundList.begin(), et = boundList.end();
-    while (it != et && (!it->watertight || it->transparent))
-        it++;
-    if (it != et)
-        boundList.erase(++it, et);
-    std::reverse(boundList.begin(), boundList.end());
-    
-    return Validity::Valid;
-}
-
-bool MapImpl::visibilityTest(TraverseNode *trav)
-{
-    assert(trav->meta);
-    // aabb test
-    if (!aabbTest(trav->meta->aabbPhys, renderer.frustumPlanes))
-        return false;
-    // additional obb test
-    if (trav->meta->obb)
-    {
-        TraverseNode::Obb &obb = *trav->meta->obb;
-        vec4 planes[6];
-        frustumPlanes(renderer.viewProj * obb.rotInv, planes);
-        if (!aabbTest(obb.points, planes))
-            return false;
-    }
-    // all tests passed
-    return true;
-}
-
-bool MapImpl::coarsenessTest(TraverseNode *trav)
-{
-    assert(trav->meta);
-    return coarsenessValue(trav) < options.maxTexelToPixelScale;
-}
-
-double MapImpl::coarsenessValue(TraverseNode *trav)
-{
-    bool applyTexelSize = trav->meta->flags()
-            & vtslibs::vts::MetaNode::Flag::applyTexelSize;
-    bool applyDisplaySize = trav->meta->flags()
-            & vtslibs::vts::MetaNode::Flag::applyDisplaySize;
-
-    if (!applyTexelSize && !applyDisplaySize)
-        return std::numeric_limits<double>::infinity();
-
-    double result = 0;
-
-    if (applyTexelSize)
-    {
-        vec3 up = renderer.perpendicularUnitVector * trav->meta->texelSize;
-        for (const vec3 &c : trav->meta->cornersPhys)
-        {
-            vec3 c1 = c - up * 0.5;
-            vec3 c2 = c1 + up;
-            c1 = vec4to3(renderer.viewProj * vec3to4(c1, 1), true);
-            c2 = vec4to3(renderer.viewProj * vec3to4(c2, 1), true);
-            double len = std::abs(c2[1] - c1[1]) * renderer.windowHeight * 0.5;
-            result = std::max(result, len);
-        }
-    }
-
-    if (applyDisplaySize)
-    {
-        // todo
-    }
-
-    return result;
-}
-
-void MapImpl::renderNode(TraverseNode *trav, const vec4f &uvClip)
-{
-    assert(trav->meta);
-    assert(!trav->rendersEmpty());
-    assert(trav->rendersReady());
-    assert(visibilityTest(trav));
-
-    // statistics
-    statistics.meshesRenderedTotal++;
-    statistics.meshesRenderedPerLod[std::min<uint32>(
-        trav->nodeInfo.nodeId().lod, MapStatistics::MaxLods-1)]++;
-
-    // meshes
-    if (!options.debugRenderNoMeshes)
-    {
-        for (const RenderTask &r : trav->opaque)
-            draws.opaque.emplace_back(r, uvClip.data(), this);
-        for (const RenderTask &r : trav->transparent)
-            draws.transparent.emplace_back(r, uvClip.data(), this);
-    }
-
-    // surrogate
-    if (options.debugRenderSurrogates)
-    {
-        RenderTask task;
-        task.mesh = getMeshRenderable("internal://data/meshes/sphere.obj");
-        task.mesh->priority = std::numeric_limits<float>::infinity();
-        task.model = translationMatrix(trav->meta->surrogatePhys)
-                * scaleMatrix(trav->nodeInfo.extents().size() * 0.03);
-        if (trav->meta->surface)
-            task.color = vec3to4f(trav->meta->surface->color, task.color(3));
-        if (task.ready())
-            draws.Infographic.emplace_back(task, this);
-    }
-
-    // mesh box
-    if (options.debugRenderMeshBoxes)
-    {
-        for (RenderTask &r : trav->opaque)
-        {
-            RenderTask task;
-            task.model = r.model;
-            task.mesh = getMeshRenderable("internal://data/meshes/aabb.obj");
-            task.mesh->priority = std::numeric_limits<float>::infinity();
-            task.color = vec4f(0, 0, 1, 1);
-            if (task.ready())
-                draws.Infographic.emplace_back(task, this);
-        }
-    }
-
-    // tile box
-    if (options.debugRenderTileBoxes)
-    {
-        RenderTask task;
-        task.mesh = getMeshRenderable("internal://data/meshes/line.obj");
-        task.mesh->priority = std::numeric_limits<float>::infinity();
-        task.color = vec4f(1, 0, 0, 1);
-        if (task.ready())
-        {
-            static const uint32 cora[] = {
-                0, 0, 1, 2, 4, 4, 5, 6, 0, 1, 2, 3
-            };
-            static const uint32 corb[] = {
-                1, 2, 3, 3, 5, 6, 7, 7, 4, 5, 6, 7
-            };
-            for (uint32 i = 0; i < 12; i++)
-            {
-                vec3 a = trav->meta->cornersPhys[cora[i]];
-                vec3 b = trav->meta->cornersPhys[corb[i]];
-                task.model = lookAt(a, b);
-                draws.Infographic.emplace_back(task, this);
-            }
-        }
-    }
-
-    // credits
-    for (auto &it : trav->meta->credits)
-        renderer.credits.hit(Credits::Scope::Imagery, it,
-                             trav->nodeInfo.distanceFromRoot());
-
-    trav->lastRenderTime = renderer.tickIndex;
-}
-
-namespace
-{
-
-void updateRangeToHalf(float &a, float &b, int which)
-{
-    a *= 0.5;
-    b *= 0.5;
-    if (which)
-    {
-        a += 0.5;
-        b += 0.5;
-    }
-}
-
-} // namespace
-
-void MapImpl::renderNodePartialRecursive(TraverseNode *trav, vec4f uvClip)
-{
-    if (!trav->parent || !trav->parent->meta->surface)
-        return;
-
-    auto id = trav->nodeInfo.nodeId();
-    float *arr = uvClip.data();
-    updateRangeToHalf(arr[0], arr[2], id.x % 2);
-    updateRangeToHalf(arr[1], arr[3], 1 - (id.y % 2));
-
-    if (!trav->parent->rendersEmpty() && trav->parent->rendersReady())
-        renderNode(trav->parent, uvClip);
-    else
-        renderNodePartialRecursive(trav->parent, uvClip);
-}
-
-std::shared_ptr<Resource> MapImpl::travInternalTexture(TraverseNode *trav,
-                                                       uint32 subMeshIndex)
-{
-    UrlTemplate::Vars vars(trav->nodeInfo.nodeId(),
-            vtslibs::vts::local(trav->nodeInfo), subMeshIndex);
-    std::shared_ptr<Resource> res = getTexture(
-                trav->meta->surface->surface->urlIntTex(vars));
-    res->updatePriority(trav->priority);
-    return res;
-}
 
 bool MapImpl::travDetermineMeta(TraverseNode *trav)
 {
@@ -505,6 +248,10 @@ bool MapImpl::travDetermineMeta(TraverseNode *trav)
             travInternalTexture(trav, i);
     }
 
+    // is coarsest lod with data?
+    trav->coarsestWithData = !!trav->meta->surface
+            && (!trav->parent || !trav->parent->meta->surface);
+
     return true;
 }
 
@@ -690,7 +437,7 @@ bool MapImpl::travInit(TraverseNode *trav, bool skipStatistics)
     }
 
     // update trav
-    trav->lastAccessTime = renderer.tickIndex;
+    trav->lastTimeAccessed = renderer.tickIndex;
 
     // priority
     trav->priority = trav->meta
@@ -780,20 +527,21 @@ void MapImpl::travModeBalanced(TraverseNode *trav)
 
     if (!visibilityTest(trav))
     {
-        trav->clearRenders();
+        // todo neighbors
+        if (trav->lastTimeRendered + 5 < renderer.tickIndex)
+            trav->clearRenders();
         return;
     }
 
     double coar = coarsenessValue(trav);
-
-    if (coar < options.maxTexelToPixelScale
-            + options.maxTexelToPixelScaleBalancedAddition)
+    if (trav->lastTimeCoarserMark + 5 > renderer.tickIndex
+            || coar < options.maxTexelToPixelScale)
     {
         touchDraws(trav);
         if (trav->meta->surface && trav->rendersEmpty())
             travDetermineDraws(trav);
     }
-    else if (trav->lastRenderTime + 5 < renderer.tickIndex)
+    else if (trav->lastTimeRendered + 5 < renderer.tickIndex)
         trav->clearRenders();
 
     bool childsHaveMeta = true;
@@ -803,10 +551,12 @@ void MapImpl::travModeBalanced(TraverseNode *trav)
     if (coar < options.maxTexelToPixelScale || trav->childs.empty()
             || !childsHaveMeta)
     {
+        traverseUpdateBalancedTimes(trav, trav->nodeInfo.nodeId().lod);
         if (!trav->rendersEmpty() && trav->rendersReady())
             renderNode(trav);
         else
-            renderNodePartialRecursive(trav);
+            balancedRenderNodePartial(trav, trav->nodeInfo.nodeId().lod,
+                                       vec4f(0,0,1,1));
         return;
     }
 
@@ -832,7 +582,7 @@ void MapImpl::traverseRender(TraverseNode *trav)
 
 void MapImpl::traverseClearing(TraverseNode *trav)
 {
-    if (trav->lastAccessTime + 5 < renderer.tickIndex)
+    if (trav->lastTimeAccessed + 5 < renderer.tickIndex)
     {
         trav->clearAll();
         return;
@@ -840,166 +590,6 @@ void MapImpl::traverseClearing(TraverseNode *trav)
 
     for (auto &it : trav->childs)
         traverseClearing(it.get());
-}
-
-void MapImpl::updateCamera()
-{
-    vec3 center, dir, up;
-    positionToCamera(center, dir, up);
-
-    vtslibs::registry::Position &pos = mapConfig->position;
-
-    // camera view matrix
-    double dist = pos.type == vtslibs::registry::Position::Type::objective
-            ? positionObjectiveDistance() : 1e-5;
-    vec3 cameraPosPhys = center - dir * dist;
-    if (callbacks.cameraOverrideEye)
-        callbacks.cameraOverrideEye((double*)&cameraPosPhys);
-    if (callbacks.cameraOverrideTarget)
-        callbacks.cameraOverrideTarget((double*)&center);
-    if (callbacks.cameraOverrideUp)
-        callbacks.cameraOverrideUp((double*)&up);
-    mat4 view = lookAt(cameraPosPhys, center, up);
-    if (callbacks.cameraOverrideView)
-    {
-        callbacks.cameraOverrideView((double*)&view);
-        // update center, dir and up
-        mat4 vi = view.inverse();
-        cameraPosPhys = vec4to3(vi * vec4(0, 0, -1, 1), true);
-        dir = vec4to3(vi * vec4(0, 0, -1, 0), false);
-        up = vec4to3(vi * vec4(0, 1, 0, 0), false);
-        center = cameraPosPhys + dir * dist;
-    }
-
-    // camera projection matrix
-    double near = std::max(2.0, dist * 0.1);
-    double terrainAboveOrigin = 0;
-    double cameraAboveOrigin = 0;
-    switch (mapConfig->navigationSrsType())
-    {
-    case vtslibs::registry::Srs::Type::projected:
-    {
-        const vtslibs::registry::Srs &srs = mapConfig->srs.get(
-                    mapConfig->referenceFrame.model.navigationSrs);
-        if (srs.periodicity)
-            terrainAboveOrigin = srs.periodicity->period / (2 * 3.14159);
-        cameraAboveOrigin = terrainAboveOrigin + dist * 2;
-    } break;
-    case vtslibs::registry::Srs::Type::geographic:
-    {
-        terrainAboveOrigin = length(convertor->navToPhys(vec2to3(vec3to2(
-                                    vecFromUblas<vec3>(pos.position)), 0)));
-        cameraAboveOrigin = length(cameraPosPhys);
-    } break;
-    case vtslibs::registry::Srs::Type::cartesian:
-        LOGTHROW(fatal, std::invalid_argument) << "Invalid navigation srs type";
-    }
-    double cameraToHorizon = cameraAboveOrigin > terrainAboveOrigin
-            ? std::sqrt(cameraAboveOrigin * cameraAboveOrigin
-                - terrainAboveOrigin * terrainAboveOrigin)
-            : 0;
-    double mountains = 5000 + terrainAboveOrigin;
-    double mountainsBehindHorizon = std::sqrt(mountains * mountains
-                                    - terrainAboveOrigin * terrainAboveOrigin);
-    double far = cameraToHorizon + mountainsBehindHorizon;
-    far = std::max(far, near * 10);
-    double fov = pos.verticalFov;
-    double aspect = (double)renderer.windowWidth/(double)renderer.windowHeight;
-    if (callbacks.cameraOverrideFovAspectNearFar)
-        callbacks.cameraOverrideFovAspectNearFar(fov, aspect, near, far);
-    assert(fov > 1e-3 && fov < 180 - 1e-3);
-    assert(aspect > 0);
-    assert(near > 0);
-    assert(far > near);
-    mat4 proj = perspectiveMatrix(fov, aspect, near, far);
-    if (callbacks.cameraOverrideProj)
-        callbacks.cameraOverrideProj((double*)&proj);
-
-    // few other variables
-    renderer.viewProjRender = proj * view;
-    if (!options.debugDetachedCamera)
-    {
-        renderer.viewProj = renderer.viewProjRender;
-        renderer.perpendicularUnitVector
-                = normalize(cross(cross(up, dir), dir));
-        renderer.forwardUnitVector = dir;
-        frustumPlanes(renderer.viewProj, renderer.frustumPlanes);
-        renderer.cameraPosPhys = cameraPosPhys;
-        renderer.focusPosPhys = center;
-    }
-    else
-    {
-        // render original camera
-        RenderTask task;
-        task.mesh = getMeshRenderable("internal://data/meshes/line.obj");
-        task.mesh->priority = std::numeric_limits<float>::infinity();
-        task.color = vec4f(0, 1, 0, 1);
-        if (task.ready())
-        {
-            std::vector<vec3> corners;
-            corners.reserve(8);
-            mat4 m = renderer.viewProj.inverse();
-            for (int x = 0; x < 2; x++)
-                for (int y = 0; y < 2; y++)
-                    for (int z = 0; z < 2; z++)
-                        corners.push_back(vec4to3(m
-                            * vec4(x * 2 - 1, y * 2 - 1, z * 2 - 1, 1), true));
-            static const uint32 cora[] = {
-                0, 0, 1, 2, 4, 4, 5, 6, 0, 1, 2, 3
-            };
-            static const uint32 corb[] = {
-                1, 2, 3, 3, 5, 6, 7, 7, 4, 5, 6, 7
-            };
-            for (uint32 i = 0; i < 12; i++)
-            {
-                vec3 a = corners[cora[i]];
-                vec3 b = corners[corb[i]];
-                task.model = lookAt(a, b);
-                draws.Infographic.emplace_back(task, this);
-            }
-        }
-    }
-
-    // render object position
-    if (options.debugRenderObjectPosition)
-    {
-        vec3 phys = convertor->navToPhys(vecFromUblas<vec3>(pos.position));
-        RenderTask r;
-        r.mesh = getMeshRenderable("internal://data/meshes/cube.obj");
-        r.mesh->priority = std::numeric_limits<float>::infinity();
-        r.textureColor = getTexture("internal://data/textures/helper.jpg");
-        r.textureColor->priority = std::numeric_limits<float>::infinity();
-        r.model = translationMatrix(phys)
-                * scaleMatrix(pos.verticalExtent * 0.015);
-        if (r.ready())
-            draws.Infographic.emplace_back(r, this);
-    }
-
-    // render target position
-    if (options.debugRenderTargetPosition)
-    {
-        vec3 phys = convertor->navToPhys(navigation.targetPoint);
-        RenderTask r;
-        r.mesh = getMeshRenderable("internal://data/meshes/cube.obj");
-        r.mesh->priority = std::numeric_limits<float>::infinity();
-        r.textureColor = getTexture("internal://data/textures/helper.jpg");
-        r.textureColor->priority = std::numeric_limits<float>::infinity();
-        r.model = translationMatrix(phys)
-                * scaleMatrix(navigation.targetViewExtent * 0.015);
-        if (r.ready())
-            draws.Infographic.emplace_back(r, this);
-    }
-
-    // update draws camera
-    {
-        MapDraws::Camera &c = draws.camera;
-        matToRaw(view, c.view);
-        matToRaw(proj, c.proj);
-        vecToRaw(center, c.target);
-        vecToRaw(cameraPosPhys, c.eye);
-        c.near = near;
-        c.far = far;
-    }
 }
 
 } // namespace vts

@@ -403,7 +403,7 @@ public:
                 | NK_WINDOW_MINIMIZABLE;
         if (prepareFirst)
             flags |= NK_WINDOW_MINIMIZED;
-        if (nk_begin(&ctx, "Options", nk_rect(10, 10, 250, 650), flags))
+        if (nk_begin(&ctx, "Options", nk_rect(10, 10, 270, 750), flags))
         {
             MapOptions &o = window->map->options();
             AppOptions &a = window->appOptions;
@@ -412,94 +412,78 @@ public:
             nk_layout_row(&ctx, NK_STATIC, 16, 3, ratio);
             char buffer[256];
 
-            // camera control sensitivity
-            nk_label(&ctx, "Mouse sensitivity:", NK_TEXT_LEFT);
-            nk_checkbox_label(&ctx, "", &optSensitivityDetails);
-            nk_label(&ctx, "", NK_TEXT_LEFT);
-            if (optSensitivityDetails)
-            {
-                // sensitivity
-                nk_layout_row(&ctx, NK_STATIC, 16, 3, ratio);
-                nk_label(&ctx, "Pan speed:", NK_TEXT_LEFT);
-                o.cameraSensitivityPan = nk_slide_float(&ctx,
-                        0.1, o.cameraSensitivityPan, 3, 0.01);
-                sprintf(buffer, "%4.2f", o.cameraSensitivityPan);
-                nk_label(&ctx, buffer, NK_TEXT_RIGHT);
-                nk_label(&ctx, "Zoom speed:", NK_TEXT_LEFT);
-                o.cameraSensitivityZoom = nk_slide_float(&ctx,
-                        0.1, o.cameraSensitivityZoom, 3, 0.01);
-                sprintf(buffer, "%4.2f", o.cameraSensitivityZoom);
-                nk_label(&ctx, buffer, NK_TEXT_RIGHT);
-                nk_label(&ctx, "Rotate speed:", NK_TEXT_LEFT);
-                o.cameraSensitivityRotate = nk_slide_float(&ctx,
-                        0.1, o.cameraSensitivityRotate, 3, 0.01);
-                sprintf(buffer, "%4.2f", o.cameraSensitivityRotate);
-                nk_label(&ctx, buffer, NK_TEXT_RIGHT);
-
-                // inertia
-                nk_label(&ctx, "Pan inertia:", NK_TEXT_LEFT);
-                o.cameraInertiaPan = nk_slide_float(&ctx,
-                        0, o.cameraInertiaPan, 0.99, 0.01);
-                sprintf(buffer, "%4.2f", o.cameraInertiaPan);
-                nk_label(&ctx, buffer, NK_TEXT_RIGHT);
-                nk_label(&ctx, "Zoom inertia:", NK_TEXT_LEFT);
-                o.cameraInertiaZoom = nk_slide_float(&ctx,
-                        0, o.cameraInertiaZoom, 0.99, 0.01);
-                sprintf(buffer, "%4.2f", o.cameraInertiaZoom);
-                nk_label(&ctx, buffer, NK_TEXT_RIGHT);
-                nk_label(&ctx, "Rotate inertia:", NK_TEXT_LEFT);
-                o.cameraInertiaRotate = nk_slide_float(&ctx,
-                        0, o.cameraInertiaRotate, 0.99, 0.01);
-                sprintf(buffer, "%4.2f", o.cameraInertiaRotate);
-                nk_label(&ctx, buffer, NK_TEXT_RIGHT);
-
-                // altitude fade out
-                nk_label(&ctx, "Altitude fade:", NK_TEXT_LEFT);
-                o.cameraAltitudeFadeOutFactor = nk_slide_float(&ctx,
-                        0, o.cameraAltitudeFadeOutFactor, 1, 0.01);
-                sprintf(buffer, "%4.2f", o.cameraAltitudeFadeOutFactor);
-                nk_label(&ctx, buffer, NK_TEXT_RIGHT);
-
-                // reset
-                nk_label(&ctx, "", NK_TEXT_LEFT);
-                if (nk_button_label(&ctx, "Reset sensitivity"))
-                {
-                    MapOptions d;
-                    o.cameraSensitivityPan       = d.cameraSensitivityPan;
-                    o.cameraSensitivityZoom      = d.cameraSensitivityZoom;
-                    o.cameraSensitivityRotate    = d.cameraSensitivityRotate;
-                    o.cameraInertiaPan           = d.cameraInertiaPan;
-                    o.cameraInertiaZoom          = d.cameraInertiaZoom;
-                    o.cameraInertiaRotate        = d.cameraInertiaRotate;
-                }
-                nk_label(&ctx, "", NK_TEXT_LEFT);
-            }
-
-            // traverse mode
-            {
-                nk_label(&ctx, "Traverse:", NK_TEXT_LEFT);
-                if (nk_combo_begin_label(&ctx,
-                                 traverseModeNames[(int)o.traverseMode],
-                                 nk_vec2(nk_widget_width(&ctx), 200)))
-                {
-                    nk_layout_row_dynamic(&ctx, 16, 1);
-                    for (unsigned i = 0; i < sizeof(traverseModeNames)
-                         / sizeof(traverseModeNames[0]); i++)
-                    {
-                        if (nk_combo_item_label(&ctx, traverseModeNames[i],
-                                                NK_TEXT_LEFT))
-                            o.traverseMode = (TraverseMode)i;
-                    }
-                    nk_combo_end(&ctx);
-                }
-                nk_label(&ctx, "", NK_TEXT_LEFT);
-            }
-
             // navigation
             {
+                nk_label(&ctx, "Navigation:", NK_TEXT_LEFT);
+                nk_label(&ctx, "--------", NK_TEXT_LEFT);
+                nk_label(&ctx, "", NK_TEXT_LEFT);
+
+                // camera control sensitivity
+                nk_label(&ctx, "Sensitivity:", NK_TEXT_LEFT);
+                nk_checkbox_label(&ctx, "", &optSensitivityDetails);
+                nk_label(&ctx, "", NK_TEXT_LEFT);
+                if (optSensitivityDetails)
+                {
+                    // sensitivity
+                    nk_layout_row(&ctx, NK_STATIC, 16, 3, ratio);
+                    nk_label(&ctx, "Pan speed:", NK_TEXT_LEFT);
+                    o.cameraSensitivityPan = nk_slide_float(&ctx,
+                            0.1, o.cameraSensitivityPan, 3, 0.01);
+                    sprintf(buffer, "%4.2f", o.cameraSensitivityPan);
+                    nk_label(&ctx, buffer, NK_TEXT_RIGHT);
+                    nk_label(&ctx, "Zoom speed:", NK_TEXT_LEFT);
+                    o.cameraSensitivityZoom = nk_slide_float(&ctx,
+                            0.1, o.cameraSensitivityZoom, 3, 0.01);
+                    sprintf(buffer, "%4.2f", o.cameraSensitivityZoom);
+                    nk_label(&ctx, buffer, NK_TEXT_RIGHT);
+                    nk_label(&ctx, "Rotate speed:", NK_TEXT_LEFT);
+                    o.cameraSensitivityRotate = nk_slide_float(&ctx,
+                            0.1, o.cameraSensitivityRotate, 3, 0.01);
+                    sprintf(buffer, "%4.2f", o.cameraSensitivityRotate);
+                    nk_label(&ctx, buffer, NK_TEXT_RIGHT);
+
+                    // inertia
+                    nk_label(&ctx, "Pan inertia:", NK_TEXT_LEFT);
+                    o.cameraInertiaPan = nk_slide_float(&ctx,
+                            0, o.cameraInertiaPan, 0.99, 0.01);
+                    sprintf(buffer, "%4.2f", o.cameraInertiaPan);
+                    nk_label(&ctx, buffer, NK_TEXT_RIGHT);
+                    nk_label(&ctx, "Zoom inertia:", NK_TEXT_LEFT);
+                    o.cameraInertiaZoom = nk_slide_float(&ctx,
+                            0, o.cameraInertiaZoom, 0.99, 0.01);
+                    sprintf(buffer, "%4.2f", o.cameraInertiaZoom);
+                    nk_label(&ctx, buffer, NK_TEXT_RIGHT);
+                    nk_label(&ctx, "Rotate inertia:", NK_TEXT_LEFT);
+                    o.cameraInertiaRotate = nk_slide_float(&ctx,
+                            0, o.cameraInertiaRotate, 0.99, 0.01);
+                    sprintf(buffer, "%4.2f", o.cameraInertiaRotate);
+                    nk_label(&ctx, buffer, NK_TEXT_RIGHT);
+
+                    // altitude fade out
+                    nk_label(&ctx, "Altitude fade:", NK_TEXT_LEFT);
+                    o.cameraAltitudeFadeOutFactor = nk_slide_float(&ctx,
+                            0, o.cameraAltitudeFadeOutFactor, 1, 0.01);
+                    sprintf(buffer, "%4.2f", o.cameraAltitudeFadeOutFactor);
+                    nk_label(&ctx, buffer, NK_TEXT_RIGHT);
+
+                    // reset
+                    nk_label(&ctx, "", NK_TEXT_LEFT);
+                    if (nk_button_label(&ctx, "Reset sensitivity"))
+                    {
+                        MapOptions d;
+                        o.cameraSensitivityPan       = d.cameraSensitivityPan;
+                        o.cameraSensitivityZoom      = d.cameraSensitivityZoom;
+                        o.cameraSensitivityRotate    = d.cameraSensitivityRotate;
+                        o.cameraInertiaPan           = d.cameraInertiaPan;
+                        o.cameraInertiaZoom          = d.cameraInertiaZoom;
+                        o.cameraInertiaRotate        = d.cameraInertiaRotate;
+                    }
+                    nk_label(&ctx, "", NK_TEXT_LEFT);
+                }
+
                 // navigation type
                 {
-                    nk_label(&ctx, "Nav. type:", NK_TEXT_LEFT);
+                    nk_label(&ctx, "Type:", NK_TEXT_LEFT);
                     if (nk_combo_begin_label(&ctx,
                                  navigationTypeNames[(int)o.navigationType],
                                  nk_vec2(nk_widget_width(&ctx), 200)))
@@ -519,7 +503,7 @@ public:
 
                 // navigation mode
                 {
-                    nk_label(&ctx, "Nav. mode:", NK_TEXT_LEFT);
+                    nk_label(&ctx, "Mode:", NK_TEXT_LEFT);
                     if (nk_combo_begin_label(&ctx,
                                  navigationModeNames[(int)o.navigationMode],
                                  nk_vec2(nk_widget_width(&ctx), 200)))
@@ -559,22 +543,81 @@ public:
                 nk_label(&ctx, buffer, NK_TEXT_RIGHT);
             }
 
-            // details
+            // traversal
             {
-                // maxTexelToPixelScale
-                nk_label(&ctx, "Texel to pixel:", NK_TEXT_LEFT);
-                o.maxTexelToPixelScale = nk_slide_float(&ctx,
-                        1, o.maxTexelToPixelScale, 5, 0.01);
-                sprintf(buffer, "%3.1f", o.maxTexelToPixelScale);
-                nk_label(&ctx, buffer, NK_TEXT_RIGHT);
+                nk_label(&ctx, "Traversal", NK_TEXT_LEFT);
+                nk_label(&ctx, "--------", NK_TEXT_LEFT);
+                nk_label(&ctx, "", NK_TEXT_LEFT);
 
-                // maxTexelToPixelScaleBalancedAddition
-                nk_label(&ctx, "Balanced addition:", NK_TEXT_LEFT);
-                o.maxTexelToPixelScaleBalancedAddition = nk_slide_float(&ctx,
-                        1, o.maxTexelToPixelScaleBalancedAddition, 10, 0.01);
-                sprintf(buffer, "%3.1f",o.maxTexelToPixelScaleBalancedAddition);
-                nk_label(&ctx, buffer, NK_TEXT_RIGHT);
+                // traverse mode
+                {
+                    nk_label(&ctx, "Mode:", NK_TEXT_LEFT);
+                    if (nk_combo_begin_label(&ctx,
+                                     traverseModeNames[(int)o.traverseMode],
+                                     nk_vec2(nk_widget_width(&ctx), 200)))
+                    {
+                        nk_layout_row_dynamic(&ctx, 16, 1);
+                        for (unsigned i = 0; i < sizeof(traverseModeNames)
+                             / sizeof(traverseModeNames[0]); i++)
+                        {
+                            if (nk_combo_item_label(&ctx, traverseModeNames[i],
+                                                    NK_TEXT_LEFT))
+                                o.traverseMode = (TraverseMode)i;
+                        }
+                        nk_combo_end(&ctx);
+                    }
+                    nk_label(&ctx, "", NK_TEXT_LEFT);
+                }
+
+                // maxTexelToPixelScale
+                {
+                    nk_label(&ctx, "Texel to pixel:", NK_TEXT_LEFT);
+                    o.maxTexelToPixelScale = nk_slide_float(&ctx,
+                            1, o.maxTexelToPixelScale, 5, 0.01);
+                    sprintf(buffer, "%3.1f", o.maxTexelToPixelScale);
+                    nk_label(&ctx, buffer, NK_TEXT_RIGHT);
+                }
+
+                // coarserLodOffset
+                {
+                    nk_label(&ctx, "Coarser lod off.:", NK_TEXT_LEFT);
+                    o.coarserLodOffset = nk_slide_int(&ctx,
+                            0, o.coarserLodOffset, 10, 1);
+                    sprintf(buffer, "%d",o.coarserLodOffset);
+                    nk_label(&ctx, buffer, NK_TEXT_RIGHT);
+                }
+
+                // gridsLodOffset
+                {
+                    nk_label(&ctx, "Grids lod off.:", NK_TEXT_LEFT);
+                    o.gridsLodOffset = nk_slide_int(&ctx,
+                            0, o.gridsLodOffset, 10, 1);
+                    sprintf(buffer, "%d",o.gridsLodOffset);
+                    nk_label(&ctx, buffer, NK_TEXT_RIGHT);
+                }
+
+                // enableLoadIntermediateLods
+                {
+                    nk_label(&ctx, "Preload:", NK_TEXT_LEFT);
+                    o.enableLoadIntermediateLods
+                            = nk_check_label(&ctx, "intermediate lod",
+                                o.enableLoadIntermediateLods);
+                    nk_label(&ctx, "", NK_TEXT_LEFT);
+                }
+
+                // enableLoadNeighbors
+                {
+                    nk_label(&ctx, "", NK_TEXT_LEFT);
+                    o.enableLoadNeighbors
+                            = nk_check_label(&ctx, "neighbor tiles",
+                                o.enableLoadNeighbors);
+                    nk_label(&ctx, "", NK_TEXT_LEFT);
+                }
             }
+
+            nk_label(&ctx, "Other:", NK_TEXT_LEFT);
+            nk_label(&ctx, "--------", NK_TEXT_LEFT);
+            nk_label(&ctx, "", NK_TEXT_LEFT);
 
             // antialiasing samples
             {
@@ -590,11 +633,11 @@ public:
                     nk_label(&ctx, "no", NK_TEXT_RIGHT);
             }
 
-            // maxResourcesMemory
+            // targetResourcesMemory
             nk_label(&ctx, "Target memory:", NK_TEXT_LEFT);
             o.targetResourcesMemory = 1024 * 1024 * (uint64)nk_slide_int(&ctx,
                     0, o.targetResourcesMemory / 1024 / 1024, 2048, 32);
-            sprintf(buffer, "%3d", (int)(o.targetResourcesMemory / 1024 / 1024));
+            sprintf(buffer, "%3d", (int)(o.targetResourcesMemory / 1024/1024));
             nk_label(&ctx, buffer, NK_TEXT_RIGHT);
 
             // display
@@ -615,6 +658,18 @@ public:
                 nk_label(&ctx, "", NK_TEXT_LEFT);
                 o.debugRenderTileBoxes = nk_check_label(&ctx, "tile boxes",
                                                     o.debugRenderTileBoxes);
+                nk_label(&ctx, "", NK_TEXT_LEFT);
+
+                // debugRenderOpaqueMeshes
+                nk_label(&ctx, "", NK_TEXT_LEFT);
+                o.debugRenderOpaqueMeshes = nk_check_label(&ctx,
+                    "opaque meshes", o.debugRenderOpaqueMeshes);
+                nk_label(&ctx, "", NK_TEXT_LEFT);
+
+                // debugRenderTransparentMeshes
+                nk_label(&ctx, "", NK_TEXT_LEFT);
+                o.debugRenderTransparentMeshes = nk_check_label(&ctx,
+                    "transparent meshes", o.debugRenderTransparentMeshes);
                 nk_label(&ctx, "", NK_TEXT_LEFT);
 
                 // render surrogates
@@ -651,12 +706,6 @@ public:
                 nk_label(&ctx, "", NK_TEXT_LEFT);
                 a.render.renderPolygonEdges = nk_check_label(&ctx, "edges",
                                                 a.render.renderPolygonEdges);
-                nk_label(&ctx, "", NK_TEXT_LEFT);
-
-                // render no meshes
-                nk_label(&ctx, "", NK_TEXT_LEFT);
-                o.debugRenderNoMeshes = nk_check_label(&ctx,
-                    "no meshes", o.debugRenderNoMeshes);
                 nk_label(&ctx, "", NK_TEXT_LEFT);
 
                 // render compas
@@ -731,7 +780,7 @@ public:
                 | NK_WINDOW_MINIMIZABLE;
         if (prepareFirst)
             flags |= NK_WINDOW_MINIMIZED;
-        if (nk_begin(&ctx, "Statistics", nk_rect(270, 10, 250, 700), flags))
+        if (nk_begin(&ctx, "Statistics", nk_rect(290, 10, 250, 750), flags))
         {
             MapStatistics &s = window->map->statistics();
             float width = nk_window_get_content_region_size(&ctx).x - 15;
@@ -810,6 +859,7 @@ public:
                     S(buffer, s.meshesRenderedPerLod[i], "");
                 }
             }
+            S("Grids:", s.meshesRenderedGrids, "");
 #undef S
         }
         nk_end(&ctx);
@@ -822,7 +872,7 @@ public:
                 | NK_WINDOW_MINIMIZABLE;
         if (prepareFirst)
             flags |= NK_WINDOW_MINIMIZED;
-        if (nk_begin(&ctx, "Position", nk_rect(530, 10, 300, 500), flags))
+        if (nk_begin(&ctx, "Position", nk_rect(550, 10, 280, 500), flags))
         {
             float width = nk_window_get_content_region_size(&ctx).x - 15;
             float ratio[] = { width * 0.3f, width * 0.7f };
@@ -1038,7 +1088,7 @@ public:
                 | NK_WINDOW_MINIMIZABLE;
         if (prepareFirst)
             flags |= NK_WINDOW_MINIMIZED;
-        if (nk_begin(&ctx, "Views", nk_rect(840, 10, 300, 400), flags))
+        if (nk_begin(&ctx, "Views", nk_rect(840, 10, 300, 500), flags))
         {
             float width = nk_window_get_content_region_size(&ctx).x - 15;
 
@@ -1141,7 +1191,7 @@ public:
                 | NK_WINDOW_MINIMIZABLE;
         if (prepareFirst)
             flags |= NK_WINDOW_MINIMIZED;
-        if (nk_begin(&ctx, "Marks", nk_rect(1150, 10, 250, 400), flags))
+        if (nk_begin(&ctx, "Marks", nk_rect(1510, 10, 250, 500), flags))
         {
             std::vector<Mark> &marks = window->marks;
             float width = nk_window_get_content_region_size(&ctx).x - 15;
@@ -1235,7 +1285,7 @@ public:
                 | NK_WINDOW_MINIMIZABLE;
         if (prepareFirst)
             flags |= NK_WINDOW_MINIMIZED;
-        if (nk_begin(&ctx, "Search", nk_rect(1410, 10, 350, 500), flags))
+        if (nk_begin(&ctx, "Search", nk_rect(1150, 10, 350, 500), flags))
         {
             float width = nk_window_get_content_region_size(&ctx).x - 15;
             if (!window->map->searchable())

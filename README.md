@@ -69,7 +69,7 @@ add_executable(vts-example main.cpp)
 target_link_libraries(vts-example ${VtsBrowser_LIBRARIES} ${VtsRenderer_LIBRARIES} SDL2)
 ```
 
-Copy the _main.cpp_ from the [vts-browser-minimal](https://github.com/Melown/vts-browser-cpp/wiki/examples-minimal).
+Copy _main.cpp_ from the [vts-browser-minimal](https://github.com/Melown/vts-browser-cpp/wiki/examples-minimal).
 
 Build and run:
 

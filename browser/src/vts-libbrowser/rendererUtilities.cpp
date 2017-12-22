@@ -236,8 +236,9 @@ namespace
 
 TraverseNode::TraverseNode(TraverseNode *parent, const NodeInfo &nodeInfo)
     : nodeInfo(nodeInfo), parent(parent), hash(hashf(nodeInfo)),
-      lastAccessTime(0), lastRenderTime(0),
-      priority(std::numeric_limits<double>::quiet_NaN())
+      lastTimeAccessed(0), lastTimeRendered(0), lastTimeCoarserMark(0),
+      priority(std::numeric_limits<double>::quiet_NaN()),
+      coarsestWithData(false)
 {}
 
 TraverseNode::~TraverseNode()
@@ -330,81 +331,6 @@ void TilesetMapping::update(const std::vector<std::string> &vsId)
         }
     }
     MapConfig::colorizeSurfaceStack(surfaceStack);
-}
-
-void MapImpl::applyCameraRotationNormalization(vec3 &rot)
-{
-    if (!options.enableCameraNormalization
-            || options.navigationType == NavigationType::FlyOver)
-        return;
-
-    // find the interpolation factor
-    double extCur = mapConfig->position.verticalExtent;
-    double extLow = options.viewExtentThresholdScaleLow * body.majorRadius;
-    double extHig = options.viewExtentThresholdScaleHigh * body.majorRadius;
-    extCur = std::log2(extCur);
-    extLow = std::log2(extLow);
-    extHig = std::log2(extHig);
-    double f = (extCur - extLow) / (extHig - extLow);
-    f = clamp(f, 0, 1);
-    f = smootherstep(f);
-
-    // tilt limit
-    rot(1) = interpolate(rot(1), options.tiltLimitAngleLow, f);
-
-    // yaw limit
-    double &yaw = rot(0);
-    if (options.navigationMode == NavigationMode::Azimuthal)
-        yaw = 0;
-    else if (options.navigationMode == NavigationMode::Seamless)
-    {
-        if (yaw > 180)
-            yaw = 360 - interpolate(360 - yaw, 0, f);
-        else
-            yaw = interpolate(yaw, 0, f);
-    }
-}
-
-double MapImpl::travDistance(TraverseNode *trav, const vec3 pointPhys)
-{
-    if (!vtslibs::vts::empty(trav->meta->geomExtents)
-            && !trav->nodeInfo.srs().empty())
-    {
-        // todo periodicity
-        vec2 fl = vecFromUblas<vec2>(trav->nodeInfo.extents().ll);
-        vec2 fu = vecFromUblas<vec2>(trav->nodeInfo.extents().ur);
-        vec3 el = vec2to3(fl, trav->meta->geomExtents.z.min);
-        vec3 eu = vec2to3(fu, trav->meta->geomExtents.z.max);
-        vec3 p = convertor->convert(pointPhys,
-            Srs::Physical, trav->nodeInfo.node());
-        return aabbPointDist(p, el, eu);
-    }
-    return aabbPointDist(pointPhys, trav->meta->aabbPhys[0],
-            trav->meta->aabbPhys[1]);
-}
-
-float MapImpl::computeResourcePriority(TraverseNode *trav)
-{
-    if (options.traverseMode == TraverseMode::Hierarchical)
-        return 1.f / trav->nodeInfo.distanceFromRoot();
-    if ((trav->hash + renderer.tickIndex) % 4 == 0) // skip expensive function
-        return (float)(1e6 / (travDistance(trav, renderer.focusPosPhys) + 1));
-    return trav->priority;
-}
-
-double MapImpl::getMapRenderProgress()
-{
-    uint32 active = statistics.currentResourcePreparing;
-    if (active == 0)
-    {
-        resources.progressEstimationMaxResources = 0;
-        return 0;
-    }
-
-    resources.progressEstimationMaxResources
-            = std::max(resources.progressEstimationMaxResources, active);
-    return double(resources.progressEstimationMaxResources - active)
-            / resources.progressEstimationMaxResources;
 }
 
 } // namespace vts

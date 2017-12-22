@@ -89,10 +89,6 @@ public:
     //   but reduces memory usage and memory bandwith
     double maxTexelToPixelScale;
 
-    // addition to ratio of kept textures res. in the balanced traverse mode
-    // increasing this ratio will store more lods above the optimal one
-    double maxTexelToPixelScaleBalancedAddition;
-
     // lower and upper limit for view-extent
     // expressed as multiplicative factor of planet major radius
     double viewExtentLimitScaleMin;
@@ -120,7 +116,7 @@ public:
     double cameraInertiaRotate;
 
     // multiplicative factor at which camera altitude will converge to terrain
-    //   when panning or zooming
+    //   when panning
     // range 0 (off) to 1 (fast)
     double cameraAltitudeFadeOutFactor;
 
@@ -161,6 +157,12 @@ public:
     // each subsequent retry is delayed twice as long as before
     uint32 fetchFirstRetryTimeOffset;
 
+    // lod offset from the optimal lod to determine the coarser lod
+    uint32 coarserLodOffset;
+
+    // lod offset from the coarser lod to determine the lod used for grids
+    uint32 gridsLodOffset;
+
     NavigationType navigationType;
     NavigationMode navigationMode;
     TraverseMode traverseMode;
@@ -186,19 +188,26 @@ public:
     //   are limited when zoomed out
     bool enableCameraNormalization;
 
+    // load all lod level between optimal and coarser
+    bool enableLoadIntermediateLods;
+
+    // load neighbor tiles for coarser, intermediate and grid lods
+    bool enableLoadNeighbors;
+
     bool debugDetachedCamera;
     bool debugDisableVirtualSurfaces;
     bool debugDisableSri;
     bool debugSaveCorruptedFiles;
     bool debugFlatShading;
 
+    bool debugRenderOpaqueMeshes;
+    bool debugRenderTransparentMeshes;
     bool debugRenderSurrogates;
     bool debugRenderMeshBoxes;
     bool debugRenderTileBoxes;
     bool debugRenderObjectPosition;
     bool debugRenderTargetPosition;
     bool debugRenderAltitudeShiftCorners;
-    bool debugRenderNoMeshes;
 };
 
 class VTS_API MapCallbacks

@@ -122,9 +122,11 @@ public:
     NodeInfo nodeInfo;
     TraverseNode *const parent;
     const uint32 hash;
-    uint32 lastAccessTime;
-    uint32 lastRenderTime;
+    uint32 lastTimeAccessed;
+    uint32 lastTimeRendered;
+    uint32 lastTimeCoarserMark;
     float priority;
+    bool coarsestWithData;
 
     TraverseNode(TraverseNode *parent, const NodeInfo &nodeInfo);
     ~TraverseNode();
@@ -180,6 +182,7 @@ public:
         std::vector<std::shared_ptr<Resource>> resourcesCopy;
         std::deque<std::weak_ptr<SearchTask>> searchTasks;
         std::deque<std::shared_ptr<SriIndex>> sriTasks;
+        std::shared_ptr<GpuTexture> gridTexture;
         boost::mutex mutResourcesCopy;
         std::string authPath;
         std::string sriPath;
@@ -283,12 +286,13 @@ public:
     bool visibilityTest(TraverseNode *trav);
     bool coarsenessTest(TraverseNode *trav);
     double coarsenessValue(TraverseNode *trav);
-    void renderNode(TraverseNode *trav,
+    void renderNode(TraverseNode *trav, uint32 originalLod = -1,
                     const vec4f &uvClip = vec4f(-1,-1,2,2));
-    void renderNodePartialRecursive(TraverseNode *trav,
-                    vec4f uvClip = vec4f(0,0,1,1));
+    void balancedRenderNodePartial(TraverseNode *trav, uint32 originalLod,
+                    vec4f uvClip);
     std::shared_ptr<Resource> travInternalTexture(TraverseNode *trav,
                                                   uint32 subMeshIndex);
+    void traverseUpdateBalancedTimes(TraverseNode *trav, uint32 originalLod);
     bool travDetermineMeta(TraverseNode *trav);
     bool travDetermineDraws(TraverseNode *trav);
     double travDistance(TraverseNode *trav, const vec3 pointPhys);
@@ -298,7 +302,7 @@ public:
     void travModeBalanced(TraverseNode *trav);
     void traverseRender(TraverseNode *trav);
     void traverseClearing(TraverseNode *trav);
-    void updateCamera();
+    void renderCamera();
     bool prerequisitesCheck();
     void applyCameraRotationNormalization(vec3 &rot);
 };

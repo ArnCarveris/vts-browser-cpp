@@ -251,11 +251,17 @@ void optionsConfigDebugOptions(
         ->implicit_value(!opts->debugRenderAltitudeShiftCorners),
         "debugRenderAltitudeShiftCorners")
 
-    ((section + "debugRenderNoMeshes").c_str(),
-        po::value<bool>(&opts->debugRenderNoMeshes)
-        ->default_value(opts->debugRenderNoMeshes)
-        ->implicit_value(!opts->debugRenderNoMeshes),
-        "debugRenderNoMeshes")
+    ((section + "debugRenderOpaqueMeshes").c_str(),
+        po::value<bool>(&opts->debugRenderOpaqueMeshes)
+        ->default_value(opts->debugRenderOpaqueMeshes)
+        ->implicit_value(!opts->debugRenderOpaqueMeshes),
+        "debugRenderOpaqueMeshes")
+
+    ((section + "debugRenderTransparentMeshes").c_str(),
+        po::value<bool>(&opts->debugRenderTransparentMeshes)
+        ->default_value(opts->debugRenderTransparentMeshes)
+        ->implicit_value(!opts->debugRenderTransparentMeshes),
+        "debugRenderTransparentMeshes")
     ;
 }
 

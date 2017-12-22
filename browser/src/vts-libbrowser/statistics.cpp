@@ -64,6 +64,7 @@ void MapStatistics::resetFrame()
     currentNodeMetaUpdates = 0;
     currentNodeDrawsUpdates = 0;
     meshesRenderedTotal = 0;
+    meshesRenderedGrids = 0;
     metaNodesTraversedTotal = 0;
     for (uint32 i = 0; i < MaxLods; i++)
     {

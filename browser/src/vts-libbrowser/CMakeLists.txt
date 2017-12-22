@@ -66,7 +66,6 @@ set(SRC_LIST
     exceptions.cpp
     fetcher.cpp
     mapApi.cpp
-    mapUtilities.cpp
     math.cpp
     navigation.cpp
     navigationAltitude.cpp
@@ -74,6 +73,7 @@ set(SRC_LIST
     options.cpp
     renderer.cpp
     rendererTraversal.cpp
+    rendererUtilities.cpp
     auth.cpp
     mapConfig.cpp
     mesh.cpp
