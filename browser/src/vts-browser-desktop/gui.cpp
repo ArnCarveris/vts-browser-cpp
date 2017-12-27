@@ -605,12 +605,12 @@ public:
                     nk_label(&ctx, "", NK_TEXT_LEFT);
                 }
 
-                // enableLoadNeighbors
+                // enableLoadNeighborGrids
                 {
                     nk_label(&ctx, "", NK_TEXT_LEFT);
-                    o.enableLoadNeighbors
-                            = nk_check_label(&ctx, "neighbor tiles",
-                                o.enableLoadNeighbors);
+                    o.enableLoadNeighborGrids
+                            = nk_check_label(&ctx, "neighbor grids",
+                                o.enableLoadNeighborGrids);
                     nk_label(&ctx, "", NK_TEXT_LEFT);
                 }
             }

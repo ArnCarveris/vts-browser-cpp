@@ -294,7 +294,7 @@ void MapImpl::renderNode(TraverseNode *trav, uint32 originalLod,
         trav->nodeInfo.nodeId().lod, MapStatistics::MaxLods - 1)]++;
 
     // updates
-    trav->lastTimeRendered = renderer.tickIndex;
+    trav->lastTimeTouched = renderer.tickIndex;
     uint32 lodDiff = (originalLod == (uint32)-1) ? 0
                 : (originalLod - trav->nodeInfo.nodeId().lod);
 
@@ -403,7 +403,7 @@ void MapImpl::renderNode(TraverseNode *trav, uint32 originalLod,
                              trav->nodeInfo.distanceFromRoot());
 }
 
-void MapImpl::balancedRenderNodePartial(TraverseNode *trav, uint32 originalLod,
+void MapImpl::renderNodePartial(TraverseNode *trav, uint32 originalLod,
                                          vec4f uvClip)
 {
     if (!trav->parent || !trav->parent->meta->surface)
@@ -417,7 +417,7 @@ void MapImpl::balancedRenderNodePartial(TraverseNode *trav, uint32 originalLod,
     if (!trav->parent->rendersEmpty() && trav->parent->rendersReady())
         renderNode(trav->parent, originalLod, uvClip);
     else
-        balancedRenderNodePartial(trav->parent, originalLod, uvClip);
+        renderNodePartial(trav->parent, originalLod, uvClip);
 }
 
 void MapImpl::touchDraws(const RenderTask &task)
@@ -438,6 +438,7 @@ void MapImpl::touchDraws(const std::vector<RenderTask> &renders)
 
 void MapImpl::touchDraws(TraverseNode *trav)
 {
+    trav->lastTimeTouched = renderer.tickIndex;
     for (auto &it : trav->opaque)
         touchDraws(it);
     for (auto &it : trav->transparent)
@@ -708,7 +709,8 @@ void MapImpl::renderTickRender()
     resources.gridTexture->priority = std::numeric_limits<float>::infinity();
 
     renderCamera();
-    traverseRender(renderer.traverseRoot.get());
+    traverseRender();
+    travPreloadNodes();
     renderer.credits.tick(credits);
     for (const RenderTask &r : navigation.renders)
         draws.Infographic.emplace_back(r, this);
@@ -789,7 +791,7 @@ double MapImpl::getMapRenderProgress()
             / resources.progressEstimationMaxResources;
 }
 
-std::shared_ptr<Resource> MapImpl::travInternalTexture(TraverseNode *trav,
+std::shared_ptr<Resource> MapImpl::preloadInternalTexture(TraverseNode *trav,
                                                        uint32 subMeshIndex)
 {
     UrlTemplate::Vars vars(trav->nodeInfo.nodeId(),
@@ -798,23 +800,6 @@ std::shared_ptr<Resource> MapImpl::travInternalTexture(TraverseNode *trav,
                 trav->meta->surface->surface->urlIntTex(vars));
     res->updatePriority(trav->priority);
     return res;
-}
-
-void MapImpl::traverseUpdateBalancedTimes(TraverseNode *trav,
-                                          uint32 originalLod)
-{
-    auto d = originalLod - trav->nodeInfo.nodeId().lod;
-    if (d == options.coarserLodOffset
-            || (options.enableLoadIntermediateLods
-                && d < options.coarserLodOffset)
-            || d == options.coarserLodOffset + options.gridsLodOffset
-            || trav->coarsestWithData)
-        trav->lastTimeCoarserMark = renderer.tickIndex;
-    if (d >= options.coarserLodOffset + options.gridsLodOffset
-            || trav->coarsestWithData)
-        return;
-    if (trav->parent)
-        traverseUpdateBalancedTimes(trav->parent, originalLod);
 }
 
 } // namespace vts

@@ -236,7 +236,7 @@ namespace
 
 TraverseNode::TraverseNode(TraverseNode *parent, const NodeInfo &nodeInfo)
     : nodeInfo(nodeInfo), parent(parent), hash(hashf(nodeInfo)),
-      lastTimeAccessed(0), lastTimeRendered(0), lastTimeCoarserMark(0),
+      lastTimeAccessed(0), lastTimeTouched(0),
       priority(std::numeric_limits<double>::quiet_NaN()),
       coarsestWithData(false)
 {}

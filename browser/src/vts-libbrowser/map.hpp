@@ -123,8 +123,7 @@ public:
     TraverseNode *const parent;
     const uint32 hash;
     uint32 lastTimeAccessed;
-    uint32 lastTimeRendered;
-    uint32 lastTimeCoarserMark;
+    uint32 lastTimeTouched;
     float priority;
     bool coarsestWithData;
 
@@ -199,6 +198,7 @@ public:
         Credits credits;
         std::shared_ptr<TraverseNode> traverseRoot;
         std::shared_ptr<TilesetMapping> tilesetMapping;
+        std::vector<TileId> nodesToPreload;
         mat4 viewProj;
         mat4 viewProjRender;
         vec4 frustumPlanes[6];
@@ -288,11 +288,11 @@ public:
     double coarsenessValue(TraverseNode *trav);
     void renderNode(TraverseNode *trav, uint32 originalLod = -1,
                     const vec4f &uvClip = vec4f(-1,-1,2,2));
-    void balancedRenderNodePartial(TraverseNode *trav, uint32 originalLod,
+    void renderNodePartial(TraverseNode *trav, uint32 originalLod,
                     vec4f uvClip);
-    std::shared_ptr<Resource> travInternalTexture(TraverseNode *trav,
+    std::shared_ptr<Resource> preloadInternalTexture(TraverseNode *trav,
                                                   uint32 subMeshIndex);
-    void traverseUpdateBalancedTimes(TraverseNode *trav, uint32 originalLod);
+    void travBalancedPropagateUp(TraverseNode *trav, uint32 originalLod);
     bool travDetermineMeta(TraverseNode *trav);
     bool travDetermineDraws(TraverseNode *trav);
     double travDistance(TraverseNode *trav, const vec3 pointPhys);
@@ -300,7 +300,9 @@ public:
     void travModeHierarchical(TraverseNode *trav, bool loadOnly);
     void travModeFlat(TraverseNode *trav);
     void travModeBalanced(TraverseNode *trav);
-    void traverseRender(TraverseNode *trav);
+    void traverseRender();
+    void travPreloadNodes();
+    void travPreloadNodes(TraverseNode *trav, TileId target);
     void traverseClearing(TraverseNode *trav);
     void renderCamera();
     bool prerequisitesCheck();

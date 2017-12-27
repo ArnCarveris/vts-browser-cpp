@@ -43,6 +43,22 @@ vec3 lowerUpperCombine(uint32 i)
     return res;
 }
 
+TileId::index_type roundNeighbor1(TileId::index_type c, int x,
+                                  TileId::index_type range)
+{
+    assert(x >= -1 && x <= 1);
+    if (c == 0 && x < 0) // index type is unsigned -> avoid overflow
+        return range + x;
+    return (c + x) % range;
+}
+
+TileId roundNeighbor(TileId c, int x, int y)
+{
+    c.x = roundNeighbor1(c.x, x, 1u << c.lod);
+    c.y = roundNeighbor1(c.y, y, 1u << c.lod);
+    return c;
+}
+
 } // namespace
 
 bool MapImpl::travDetermineMeta(TraverseNode *trav)
@@ -245,7 +261,7 @@ bool MapImpl::travDetermineMeta(TraverseNode *trav)
     if (node->geometry())
     {
         for (uint32 i = 0; i < node->internalTextureCount(); i++)
-            travInternalTexture(trav, i);
+            preloadInternalTexture(trav, i);
     }
 
     // is coarsest lod with data?
@@ -391,7 +407,7 @@ bool MapImpl::travDetermineDraws(TraverseNode *trav)
         if (part.internalUv)
         {
             RenderTask task;
-            task.textureColor = travInternalTexture(trav, subMeshIndex);
+            task.textureColor = preloadInternalTexture(trav, subMeshIndex);
             switch (getResourceValidity(task.textureColor))
             {
             case Validity::Indeterminate:
@@ -499,10 +515,7 @@ void MapImpl::travModeFlat(TraverseNode *trav)
         return;
 
     if (!visibilityTest(trav))
-    {
-        trav->clearRenders();
         return;
-    }
 
     if (coarsenessTest(trav) || trav->childs.empty())
     {
@@ -514,8 +527,6 @@ void MapImpl::travModeFlat(TraverseNode *trav)
         return;
     }
 
-    trav->clearRenders();
-
     for (auto &t : trav->childs)
         travModeFlat(t.get());
 }
@@ -526,23 +537,15 @@ void MapImpl::travModeBalanced(TraverseNode *trav)
         return;
 
     if (!visibilityTest(trav))
-    {
-        // todo neighbors
-        if (trav->lastTimeRendered + 5 < renderer.tickIndex)
-            trav->clearRenders();
         return;
-    }
 
     double coar = coarsenessValue(trav);
-    if (trav->lastTimeCoarserMark + 5 > renderer.tickIndex
-            || coar < options.maxTexelToPixelScale)
+    if (coar < options.maxTexelToPixelScale)
     {
         touchDraws(trav);
         if (trav->meta->surface && trav->rendersEmpty())
             travDetermineDraws(trav);
     }
-    else if (trav->lastTimeRendered + 5 < renderer.tickIndex)
-        trav->clearRenders();
 
     bool childsHaveMeta = true;
     for (auto &it : trav->childs)
@@ -551,11 +554,11 @@ void MapImpl::travModeBalanced(TraverseNode *trav)
     if (coar < options.maxTexelToPixelScale || trav->childs.empty()
             || !childsHaveMeta)
     {
-        traverseUpdateBalancedTimes(trav, trav->nodeInfo.nodeId().lod);
+        travBalancedPropagateUp(trav, trav->nodeInfo.nodeId().lod);
         if (!trav->rendersEmpty() && trav->rendersReady())
             renderNode(trav);
         else
-            balancedRenderNodePartial(trav, trav->nodeInfo.nodeId().lod,
+            renderNodePartial(trav, trav->nodeInfo.nodeId().lod,
                                        vec4f(0,0,1,1));
         return;
     }
@@ -564,20 +567,86 @@ void MapImpl::travModeBalanced(TraverseNode *trav)
         travModeBalanced(t.get());
 }
 
-void MapImpl::traverseRender(TraverseNode *trav)
+void MapImpl::travBalancedPropagateUp(TraverseNode *trav,
+                                          uint32 originalLod)
+{
+    uint32 gridlod = options.coarserLodOffset + options.gridsLodOffset;
+    uint32 d = originalLod - trav->nodeInfo.nodeId().lod;
+    if (d == options.coarserLodOffset
+            || (options.enableLoadIntermediateLods
+                && d < options.coarserLodOffset)
+            || d == gridlod
+            || trav->coarsestWithData)
+    {
+        // preload coarser lod
+        touchDraws(trav);
+        if (trav->meta->surface && trav->rendersEmpty())
+            travDetermineDraws(trav);
+    }
+    if (d == gridlod && options.enableLoadNeighborGrids)
+    {
+        // preload neighbors for grid
+        TileId id = trav->nodeInfo.nodeId();
+        for (int x = -1; x < 2; x++)
+            for (int y = -1; y < 2; y++)
+                if (x != 0 || y != 0)
+                    renderer.nodesToPreload.push_back(roundNeighbor(id, x, y));
+    }
+    if (d >= gridlod || trav->coarsestWithData)
+        return;
+    if (trav->parent)
+        travBalancedPropagateUp(trav->parent, originalLod);
+}
+
+void MapImpl::travPreloadNodes(TraverseNode *trav, TileId target)
+{
+    TileId id = trav->nodeInfo.nodeId();
+    assert(id.lod <= target.lod);
+
+    if (!travInit(trav, true))
+        return;
+
+    if (id == target)
+    {
+        // target found
+        touchDraws(trav);
+        if (trav->meta->surface && trav->rendersEmpty())
+            travDetermineDraws(trav);
+    }
+    else
+    {
+        // we need to go deeper
+        TileId par = vtslibs::vts::parent(target, target.lod - id.lod - 1);
+        for (auto &it : trav->childs)
+            if (it->nodeInfo.nodeId() == par)
+                return travPreloadNodes(it.get(), target);
+    }
+}
+
+void MapImpl::traverseRender()
 {
     switch (options.traverseMode)
     {
     case TraverseMode::Hierarchical:
-        travModeHierarchical(trav, false);
+        travModeHierarchical(renderer.traverseRoot.get(), false);
         break;
     case TraverseMode::Flat:
-        travModeFlat(trav);
+        travModeFlat(renderer.traverseRoot.get());
         break;
     case TraverseMode::Balanced:
-        travModeBalanced(trav);
+        travModeBalanced(renderer.traverseRoot.get());
         break;
     }
+}
+
+void MapImpl::travPreloadNodes()
+{
+    auto &ns = renderer.nodesToPreload;
+    std::sort(ns.begin(), ns.end());
+    ns.erase(std::unique(ns.begin(), ns.end()), ns.end());
+    for (auto it : renderer.nodesToPreload)
+        travPreloadNodes(renderer.traverseRoot.get(), it);
+    ns.clear();
 }
 
 void MapImpl::traverseClearing(TraverseNode *trav)
@@ -587,6 +656,8 @@ void MapImpl::traverseClearing(TraverseNode *trav)
         trav->clearAll();
         return;
     }
+    if (trav->lastTimeTouched + 5 < renderer.tickIndex)
+        trav->clearRenders();
 
     for (auto &it : trav->childs)
         traverseClearing(it.get());

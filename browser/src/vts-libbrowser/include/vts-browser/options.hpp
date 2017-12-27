@@ -192,7 +192,7 @@ public:
     bool enableLoadIntermediateLods;
 
     // load neighbor tiles for coarser, intermediate and grid lods
-    bool enableLoadNeighbors;
+    bool enableLoadNeighborGrids;
 
     bool debugDetachedCamera;
     bool debugDisableVirtualSurfaces;

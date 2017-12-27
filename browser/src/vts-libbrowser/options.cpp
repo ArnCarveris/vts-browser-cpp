@@ -77,7 +77,7 @@ MapOptions::MapOptions() :
     enableArbitrarySriRequests(true),
     enableCameraNormalization(true),
     enableLoadIntermediateLods(true),
-    enableLoadNeighbors(true),
+    enableLoadNeighborGrids(true),
     debugDetachedCamera(false),
     debugDisableVirtualSurfaces(false),
     debugDisableSri(true),
