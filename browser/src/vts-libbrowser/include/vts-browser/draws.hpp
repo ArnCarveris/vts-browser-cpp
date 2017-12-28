@@ -59,6 +59,7 @@ public:
 class VTS_API MapDraws
 {
 public:
+    std::vector<DrawTask> grids;
     std::vector<DrawTask> opaque;
     std::vector<DrawTask> transparent;
     std::vector<DrawTask> Infographic;

@@ -98,6 +98,19 @@ void updateRangeToHalf(float &a, float &b, int which)
     }
 }
 
+void updateUvsForGrids(float *uvm, float *uvclip)
+{
+    static const float scale = 16;
+    static const mat3f scm = mat4to3(scaleMatrix(scale)).cast<float>();
+    {
+        mat3f m = rawToMat3(uvm);
+        m = m * scm;
+        matToRaw(m, uvm);
+    }
+    for (int i = 0; i < 4; i++)
+        uvclip[i] *= scale;
+}
+
 } // namespace
 
 MapImpl::Renderer::Renderer() :
@@ -299,7 +312,9 @@ void MapImpl::renderNode(TraverseNode *trav, uint32 originalLod,
                 : (originalLod - trav->nodeInfo.nodeId().lod);
 
     // meshes
-    if (lodDiff <= options.coarserLodOffset)
+    if (lodDiff <= options.coarserLodOffset
+            && (options.debugRenderOpaqueMeshes
+                || options.debugRenderTransparentMeshes))
     {
         // regular meshes
         if (options.debugRenderOpaqueMeshes)
@@ -313,29 +328,22 @@ void MapImpl::renderNode(TraverseNode *trav, uint32 originalLod,
                 draws.transparent.emplace_back(r, uvClip.data(), this);
         }
     }
-    else
+    else if (options.debugRenderGridMeshes && *resources.gridTexture)
     {
         // grids
-        auto fnc = [&](std::vector<DrawTask> &vec, const RenderTask &r)
+        for (const RenderTask &r : trav->opaque)
         {
             DrawTask d(r, uvClip.data(), this);
-            if (d.texColor)
-            {
-                if (!*resources.gridTexture)
-                    return;
-                d.texColor = resources.gridTexture->info.userData;
-                d.externalUv = true;
-                d.color[0] = d.color[1] = d.color[2] = d.color[3] = 1;
-                d.flatShading = false;
-            }
-            vec.push_back(std::move(d));
-        };
-        if (options.debugRenderOpaqueMeshes)
-        {
-            for (const RenderTask &r : trav->opaque)
-                fnc(draws.opaque, r);
+            if (!d.texColor)
+                continue;
+            d.texColor = resources.gridTexture->info.userData;
+            d.externalUv = true;
+            d.color[0] = d.color[1] = d.color[2] = d.color[3] = 1;
+            d.flatShading = false;
+            updateUvsForGrids(d.uvm, d.uvClip);
+            draws.grids.push_back(std::move(d));
+            statistics.meshesRenderedGrids++;
         }
-        statistics.meshesRenderedGrids++;
     }
 
     if (lodDiff == 0)
@@ -705,8 +713,10 @@ void MapImpl::renderTickRender()
             || renderer.windowWidth == 0 || renderer.windowHeight == 0)
         return;
 
-    resources.gridTexture = getTexture("internal://data/textures/helper.jpg");
+    resources.gridTexture = getTexture("internal://data/textures/grid.png");
     resources.gridTexture->priority = std::numeric_limits<float>::infinity();
+    resources.gridTexture->flags = GpuTextureSpec::Flags(
+        GpuTextureSpec::Mipmaps | GpuTextureSpec::Repeat);
 
     renderCamera();
     traverseRender();

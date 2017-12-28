@@ -289,6 +289,13 @@ void Texture::generateMipmaps()
     glGenerateMipmap(GL_TEXTURE_2D);
 }
 
+void Texture::makeRepeat()
+{
+    glBindTexture(GL_TEXTURE_2D, id);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+}
+
 uint32 Texture::getId() const
 {
     return id;

@@ -70,6 +70,13 @@ public:
     // the rows are in no way aligned to multi-byte boundaries
     //   (GL_UNPACK_ALIGNMENT = 1)
     Buffer buffer;
+
+    enum Flags
+    {
+        None = 0,
+        Mipmaps = 1 << 0,
+        Repeat = 1 << 1,
+    } flags;
 };
 
 // information about mesh passed to loadMesh callback

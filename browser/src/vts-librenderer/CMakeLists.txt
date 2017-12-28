@@ -33,6 +33,7 @@ set(DATA_LIST
     data/shaders/copyDepth.vert.glsl
     data/textures/compas.png
     data/textures/helper.jpg
+    data/textures/grid.png
 )
 
 pack_data(initializeRenderData)

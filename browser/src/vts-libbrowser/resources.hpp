@@ -101,6 +101,8 @@ class GpuTexture : public Resource
 public:
     GpuTexture(MapImpl *map, const std::string &name);
     void load() override;
+
+    GpuTextureSpec::Flags flags;
 };
 
 class AuthConfig : public Resource

@@ -78,6 +78,7 @@ public:
     void bind();
     void load(ResourceInfo &info, GpuTextureSpec &spec);
     void generateMipmaps();
+    void makeRepeat();
     uint32 getId() const;
     bool getGrayscale() const;
 

@@ -200,6 +200,7 @@ public:
     bool debugSaveCorruptedFiles;
     bool debugFlatShading;
 
+    bool debugRenderGridMeshes;
     bool debugRenderOpaqueMeshes;
     bool debugRenderTransparentMeshes;
     bool debugRenderSurrogates;

@@ -660,6 +660,12 @@ public:
                                                     o.debugRenderTileBoxes);
                 nk_label(&ctx, "", NK_TEXT_LEFT);
 
+                // debugRenderGridMeshes
+                nk_label(&ctx, "", NK_TEXT_LEFT);
+                o.debugRenderGridMeshes = nk_check_label(&ctx,
+                    "grid meshes", o.debugRenderGridMeshes);
+                nk_label(&ctx, "", NK_TEXT_LEFT);
+
                 // debugRenderOpaqueMeshes
                 nk_label(&ctx, "", NK_TEXT_LEFT);
                 o.debugRenderOpaqueMeshes = nk_check_label(&ctx,

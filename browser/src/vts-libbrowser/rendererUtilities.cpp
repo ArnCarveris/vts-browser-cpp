@@ -177,6 +177,7 @@ MapDraws::MapDraws()
 
 void MapDraws::clear()
 {
+    grids.clear();
     opaque.clear();
     transparent.clear();
     Infographic.clear();

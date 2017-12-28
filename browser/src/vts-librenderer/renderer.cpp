@@ -310,6 +310,9 @@ public:
         glDisable(GL_BLEND);
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LEQUAL);
+        for (const DrawTask &t : draws.grids)
+            drawSurface(t);
+        checkGl("rendered grids");
         for (const DrawTask &t : draws.opaque)
             drawSurface(t);
         checkGl("rendered opaque");
@@ -702,14 +705,18 @@ RenderVariables::RenderVariables() :
 
 void loadTexture(ResourceInfo &info, GpuTextureSpec &spec)
 {
-    auto r = std::make_shared<Texture>();
+    std::shared_ptr<Texture> r = std::make_shared<Texture>();
     r->load(info, spec);
+    if (spec.flags & GpuTextureSpec::Mipmaps)
+        r->generateMipmaps();
+    if (spec.flags & GpuTextureSpec::Repeat)
+        r->makeRepeat();
     info.userData = r;
 }
 
 void loadMesh(ResourceInfo &info, GpuMeshSpec &spec)
 {
-    auto r = std::make_shared<Mesh>();
+    std::shared_ptr<Mesh> r = std::make_shared<Mesh>();
     r->load(info, spec);
     info.userData = r;
 }

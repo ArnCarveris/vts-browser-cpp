@@ -30,10 +30,12 @@
 namespace vts
 {
 
-GpuTextureSpec::GpuTextureSpec() : width(0), height(0), components(0)
+GpuTextureSpec::GpuTextureSpec()
+    : width(0), height(0), components(0), flags(None)
 {}
 
 GpuTextureSpec::GpuTextureSpec(const Buffer &buffer)
+    : width(0), height(0), components(0), flags(None)
 {
     decodeImage(buffer, this->buffer, width, height, components);
 }
@@ -54,7 +56,8 @@ void GpuTextureSpec::verticalFlip()
 }
 
 GpuTexture::GpuTexture(MapImpl *map, const std::string &name) :
-    Resource(map, name, FetchTask::ResourceType::Texture)
+    Resource(map, name, FetchTask::ResourceType::Texture),
+    flags(GpuTextureSpec::None)
 {}
 
 void GpuTexture::load()
@@ -62,6 +65,7 @@ void GpuTexture::load()
     LOG(info2) << "Loading (gpu) texture <" << name << ">";
     GpuTextureSpec spec(reply.content);
     spec.verticalFlip();
+    spec.flags = flags;
     map->callbacks.loadTexture(info, spec);
     info.ramMemoryCost += sizeof(*this);
 }
