@@ -37,7 +37,7 @@ BoundParamInfo::BoundParamInfo(const View::BoundLayerParams &params)
       bound(nullptr), depth(0), watertight(true), transparent(false)
 {}
 
-const mat3f BoundParamInfo::uvMatrix() const
+mat3f BoundParamInfo::uvMatrix() const
 {
     int dep = depth;
     if (dep == 0)

@@ -65,7 +65,7 @@ public:
     typedef std::vector<BoundParamInfo> List;
 
     BoundParamInfo(const vtslibs::registry::View::BoundLayerParams &params);
-    const mat3f uvMatrix() const;
+    mat3f uvMatrix() const;
     Validity prepare(const NodeInfo &nodeInfo, class MapImpl *impl,
                  uint32 subMeshIndex, double priority);
 
@@ -107,7 +107,7 @@ public:
     {
         std::vector<std::shared_ptr<MetaTile>> metaTiles;
         std::vector<vtslibs::registry::CreditId> credits;
-        std::shared_ptr<Obb> obb;
+        boost::optional<Obb> obb;
         vec3 cornersPhys[8];
         vec3 aabbPhys[2];
         vec3 surrogatePhys;
@@ -115,7 +115,7 @@ public:
         MetaInfo(const vtslibs::vts::MetaNode &node);
     };
 
-    std::shared_ptr<MetaInfo> meta;
+    boost::optional<MetaInfo> meta;
     std::vector<std::shared_ptr<TraverseNode>> childs;
     std::vector<RenderTask> opaque;
     std::vector<RenderTask> transparent;
@@ -300,9 +300,9 @@ public:
     void travModeHierarchical(TraverseNode *trav, bool loadOnly);
     void travModeFlat(TraverseNode *trav);
     void travModeBalanced(TraverseNode *trav);
-    void traverseRender();
-    void travPreloadNodes();
     void travPreloadNodes(TraverseNode *trav, TileId target);
+    void traverseRender();
+    void traversePreloadNodes();
     void traverseClearing(TraverseNode *trav);
     void renderCamera();
     bool prerequisitesCheck();

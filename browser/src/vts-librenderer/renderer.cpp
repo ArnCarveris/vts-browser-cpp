@@ -78,13 +78,15 @@ void clearGlState()
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_SCISSOR_TEST);
     glDisable(GL_BLEND);
-    glUseProgram(0);
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-    glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glUseProgram(0);
+    glActiveTexture(GL_TEXTURE0);
+    glPolygonOffset(0, 0);
+    glDepthFunc(GL_LESS);
     checkGl("cleared gl state");
 }
 
@@ -113,10 +115,26 @@ public:
         Texture *tex = (Texture*)t.texColor.get();
         Mesh *m = (Mesh*)t.mesh.get();
         shaderSurface->bind();
+        /*
+        if (grid)
+        {
+            static const float scale = 1.1;
+            mat4f mvp = rawToMat4(t.mvp)
+                    * scaleMatrix(scale).cast<float>();
+            mat3f uvm = rawToMat3(t.uvm)
+                    * mat4to3(scaleMatrix(scale)).cast<float>();
+            shaderSurface->uniformMat4(0, mvp.data());
+            shaderSurface->uniformMat3(2, uvm.data());
+            float uvclip[4];
+            for (int i = 0; i < 4; i++)
+                uvclip[i] = t.uvClip[i] * scale;
+            shaderSurface->uniformVec4(4, uvclip);
+        }
+        */
         shaderSurface->uniformMat4(0, t.mvp);
         shaderSurface->uniformMat3(2, t.uvm);
-        shaderSurface->uniformVec4(3, t.color);
         shaderSurface->uniformVec4(4, t.uvClip);
+        shaderSurface->uniformVec4(3, t.color);
         int flags[4] = {
             t.texMask ? 1 : -1,
             tex->getGrayscale() ? 1 : -1,
@@ -293,40 +311,38 @@ public:
         }
 
         // initialize opengl
+        clearGlState();
         glViewport(0, 0, options.width, options.height);
-        glActiveTexture(GL_TEXTURE0);
         glBindFramebuffer(GL_FRAMEBUFFER, vars.frameRenderBufferId);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glEnable(GL_CULL_FACE);
-        #ifndef VTSR_OPENGLES
-        glEnable(GL_POLYGON_OFFSET_LINE);
-        glPolygonOffset(0, -1000);
-        #endif
+        glEnable(GL_DEPTH_TEST);
         glClearColor(0, 0, 0, 1);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         checkGl("initialized opengl");
 
-        // render opaque
-        glDisable(GL_BLEND);
-        glEnable(GL_DEPTH_TEST);
-        glDepthFunc(GL_LEQUAL);
+        // render grids
+        //glEnable(GL_POLYGON_OFFSET_FILL);
+        //glPolygonOffset(0, +1000);
         for (const DrawTask &t : draws.grids)
             drawSurface(t);
+        //glPolygonOffset(0, 0);
+        //glDisable(GL_POLYGON_OFFSET_FILL);
         checkGl("rendered grids");
+
+        // render opaque
         for (const DrawTask &t : draws.opaque)
             drawSurface(t);
         checkGl("rendered opaque");
 
-        // render transparent
-        glEnable(GL_BLEND);
-        for (const DrawTask &t : draws.transparent)
-            drawSurface(t);
-        checkGl("rendered transparent");
-
         // render polygon edges
         if (options.renderPolygonEdges)
         {
-            glDisable(GL_BLEND);
+#ifdef VTSR_OPENGLES
+            glEnable(GL_POLYGON_OFFSET_FILL);
+#else
+            glEnable(GL_POLYGON_OFFSET_LINE);
+#endif
+            glPolygonOffset(0, -1000);
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
             for (const DrawTask &it : draws.opaque)
             {
@@ -336,9 +352,22 @@ public:
                 drawSurface(t);
             }
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-            glEnable(GL_BLEND);
+#ifdef VTSR_OPENGLES
+            glDisable(GL_POLYGON_OFFSET_FILL);
+#else
+            glDisable(GL_POLYGON_OFFSET_LINE);
+#endif
+            glPolygonOffset(0, 0);
             checkGl("rendered polygon edges");
         }
+
+        // render transparent
+        glDepthFunc(GL_LEQUAL);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        for (const DrawTask &t : draws.transparent)
+            drawSurface(t);
+        checkGl("rendered transparent");
 
         // copy the depth (resolve multisampling)
         if (vars.depthReadTexId != vars.depthRenderTexId)

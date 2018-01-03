@@ -76,7 +76,7 @@ MapOptions::MapOptions() :
     enableRuntimeResourceExpiration(false),
     enableArbitrarySriRequests(true),
     enableCameraNormalization(true),
-    enableLoadIntermediateLods(false),
+    enableLoadIntermediateLods(true),
     enableLoadNeighborGrids(true),
     debugDetachedCamera(false),
     debugDisableVirtualSurfaces(false),

@@ -145,7 +145,7 @@ bool MapImpl::travDetermineMeta(TraverseNode *trav)
     if (!node)
         return false; // all surfaces failed to download, what can i do?
 
-    trav->meta = std::make_shared<TraverseNode::MetaInfo>(*node);
+    trav->meta = *node;
     trav->meta->metaTiles.swap(metaTiles);
 
     // corners
@@ -191,7 +191,7 @@ bool MapImpl::travDetermineMeta(TraverseNode *trav)
                 obb.points[1] = max(obb.points[1], p);
             }
 
-            trav->meta->obb = std::make_shared<TraverseNode::Obb>(obb);
+            trav->meta->obb = obb;
         }
     }
     else if (node->extents.ll != node->extents.ur)
@@ -281,7 +281,7 @@ bool MapImpl::travDetermineDraws(TraverseNode *trav)
     statistics.currentNodeDrawsUpdates++;
 
     // update priority
-    trav->priority = computeResourcePriority(trav);
+    //trav->priority = computeResourcePriority(trav);
 
     const TileId nodeId = trav->nodeInfo.nodeId();
 
@@ -639,7 +639,7 @@ void MapImpl::traverseRender()
     }
 }
 
-void MapImpl::travPreloadNodes()
+void MapImpl::traversePreloadNodes()
 {
     auto &ns = renderer.nodesToPreload;
     std::sort(ns.begin(), ns.end());

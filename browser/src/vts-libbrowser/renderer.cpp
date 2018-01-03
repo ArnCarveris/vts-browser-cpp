@@ -720,7 +720,7 @@ void MapImpl::renderTickRender()
 
     renderCamera();
     traverseRender();
-    travPreloadNodes();
+    traversePreloadNodes();
     renderer.credits.tick(credits);
     for (const RenderTask &r : navigation.renders)
         draws.Infographic.emplace_back(r, this);
