@@ -157,7 +157,7 @@ void MapImpl::initializeNavigation()
     assert(isNavigationModeValid());
 }
 
-void MapImpl::updateNavigation()
+void MapImpl::updateNavigation(double timeStepSeconds)
 {
     assert(options.cameraInertiaPan >= 0
            && options.cameraInertiaPan < 1);
@@ -167,6 +167,9 @@ void MapImpl::updateNavigation()
            && options.cameraInertiaZoom < 1);
     assert(options.navigationLatitudeThreshold > 0
            && options.navigationLatitudeThreshold < 90);
+
+    if (timeStepSeconds <= 0)
+        return;
 
     navigation.renders.clear();
 
@@ -274,7 +277,7 @@ void MapImpl::updateNavigation()
     vec3 r2(vertical2, vertical2, vertical2);
     navigationPiha(
                 options,
-                1.0 / 60.0, // todo
+                timeStepSeconds,
                 pos.verticalFov,
                 horizontal1,
                 vertical1,

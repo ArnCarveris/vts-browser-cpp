@@ -74,6 +74,7 @@ set(SRC_LIST
     renderer.cpp
     rendererTraversal.cpp
     rendererUtilities.cpp
+    travelNode.cpp
     auth.cpp
     mapConfig.cpp
     mesh.cpp

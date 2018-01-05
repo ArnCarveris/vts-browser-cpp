@@ -323,6 +323,8 @@ void MainWindow::run()
     bool initialPositionSet = false;
     bool shouldClose = false;
 
+    vts::uint32 lastRenderTime = SDL_GetTicks();
+
     while (!shouldClose)
     {
         if (!initialPositionSet && map->getMapConfigReady())
@@ -351,8 +353,10 @@ void MainWindow::run()
         map->setWindowSize(ro.width, ro.height);
         try
         {
-            map->renderTickPrepare();
+            vts::uint32 currentRenderTime = SDL_GetTicks();
+            map->renderTickPrepare((currentRenderTime - lastRenderTime) * 1e-3);
             map->renderTickRender();
+            lastRenderTime = currentRenderTime;
         }
         catch (const vts::MapConfigException &e)
         {

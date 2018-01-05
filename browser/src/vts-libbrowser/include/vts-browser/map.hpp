@@ -72,8 +72,8 @@ public:
     void dataFinalize();
 
     void renderInitialize();
-    void renderTickPrepare();
-    void renderTickRender();
+    void renderTickPrepare(double timeStepSeconds); // call once per frame
+    void renderTickRender(); // call for each viewport
     void renderFinalize();
     void setWindowSize(uint32 width, uint32 height);
 

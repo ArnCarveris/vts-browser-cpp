@@ -517,7 +517,7 @@ using namespace vts;
 
     try
     {
-        map->renderTickPrepare();
+        map->renderTickPrepare(1.0 / 30);
         map->renderTickRender();
     }
     catch (const vts::MapConfigException &)

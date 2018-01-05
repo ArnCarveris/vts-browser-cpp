@@ -28,7 +28,9 @@
 #define MAP_H_cvukikljqwdf
 
 #include <queue>
+#include <array>
 #include <boost/thread/mutex.hpp>
+#include <boost/utility/in_place_factory.hpp>
 #include <vts-libs/vts/urltemplate.hpp>
 #include <vts-libs/vts/nodeinfo.hpp>
 #include <dbglog/dbglog.hpp>
@@ -135,6 +137,8 @@ public:
     bool rendersEmpty() const;
 };
 
+class TravelNode;
+
 class MapImpl
 {
 public:
@@ -201,7 +205,7 @@ public:
         std::vector<TileId> nodesToPreload;
         mat4 viewProj;
         mat4 viewProjRender;
-        vec4 frustumPlanes[6];
+        std::array<vec4, 6> frustumPlanes;
         vec3 perpendicularUnitVector;
         vec3 forwardUnitVector;
         vec3 cameraPosPhys;
@@ -212,6 +216,16 @@ public:
         
         Renderer();
     } renderer;
+
+    class Traveler
+    {
+    public:
+        std::vector<TravelNode*> loadMetaQueue;
+        std::vector<TravelNode*> loadDrawsQueue;
+        std::vector<TravelNode*> drawQueue;
+        std::shared_ptr<TravelNode> root;
+        void clear();
+    } travel;
 
     // map api methods
     void setMapConfigPath(const std::string &mapConfigPath,
@@ -235,7 +249,7 @@ public:
     void positionToCamera(vec3 &center, vec3 &dir, vec3 &up);
     double positionObjectiveDistance();
     void initializeNavigation();
-    void updateNavigation();
+    void updateNavigation(double timeStepSeconds);
     bool isNavigationModeValid() const;
 
     // resources methods
@@ -264,7 +278,6 @@ public:
     std::shared_ptr<SriIndex> getSriIndex(const std::string &name);
     Validity getResourceValidity(const std::string &name);
     Validity getResourceValidity(const std::shared_ptr<Resource> &resource);
-    float computeResourcePriority(TraverseNode *trav);
     std::shared_ptr<SearchTask> search(const std::string &query,
                                        const double point[3]);
     void updateSearch();
@@ -275,13 +288,19 @@ public:
     // renderer methods
     void renderInitialize();
     void renderFinalize();
-    void renderTickPrepare();
+    void renderTickPrepare(double timeStepSeconds);
     void renderTickRender();
-    const TileId roundId(TileId nodeId);
+    TileId roundIdByTileBinaryOrder(TileId nodeId);
     Validity reorderBoundLayers(const NodeInfo &nodeInfo, uint32 subMeshIndex,
                            BoundParamInfo::List &boundList, double priority);
     void touchDraws(const RenderTask &task);
     void touchDraws(const std::vector<RenderTask> &renders);
+    void renderCamera();
+    bool prerequisitesCheck();
+    void applyCameraRotationNormalization(vec3 &rot);
+
+    // traversal methods
+    float computeResourcePriority(TraverseNode *trav);
     void touchDraws(TraverseNode *trav);
     bool visibilityTest(TraverseNode *trav);
     bool coarsenessTest(TraverseNode *trav);
@@ -304,9 +323,24 @@ public:
     void traverseRender();
     void traversePreloadNodes();
     void traverseClearing(TraverseNode *trav);
-    void renderCamera();
-    bool prerequisitesCheck();
-    void applyCameraRotationNormalization(vec3 &rot);
+
+    // travel methods
+    bool visibilityTest(TravelNode *trav);
+    bool coarsenessTest(TravelNode *trav);
+    void renderNode(TravelNode *trav, const vec4f &uvClip = vec4f(-1,-1,2,2));
+    void renderNodePartial(TravelNode *trav, vec4f uvClip);
+    bool travDetermineDrawsOld(TravelNode *trav);
+    void travelUpdateMeta(TravelNode *trav);
+    void travelUpdateDraws(TravelNode *trav);
+    void travelTickPrepare();
+    void travelTickRender();
+    void initializeTravelRoot();
+    std::shared_ptr<Resource> preloadInternalTexture(TravelNode *trav,
+                                    uint32 subMeshIndex);
+    void travelClearingNode(TravelNode *trav);
+    void travelDetermineHierarchy(TravelNode *trav);
+    void travelDetermineDrawLoads(TravelNode *trav);
+    void travelDetermineRenders(TravelNode *trav);
 };
 
 } // namespace vts

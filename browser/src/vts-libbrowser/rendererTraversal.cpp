@@ -24,8 +24,6 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <boost/utility/in_place_factory.hpp>
-
 #include "map.hpp"
 
 namespace vts
@@ -76,7 +74,7 @@ bool MapImpl::travDetermineMeta(TraverseNode *trav)
     // find all metatiles
     std::vector<std::shared_ptr<MetaTile>> metaTiles;
     metaTiles.resize(mapConfig->surfaceStack.size());
-    const UrlTemplate::Vars tileIdVars(roundId(nodeId));
+    const UrlTemplate::Vars tileIdVars(roundIdByTileBinaryOrder(nodeId));
     bool determined = true;
     for (uint32 i = 0, e = metaTiles.size(); i != e; i++)
     {

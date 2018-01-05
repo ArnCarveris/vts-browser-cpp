@@ -116,6 +116,9 @@ int main(int, char *[])
     map->setMapConfigPath("https://cdn.melown.com/mario/store/melown2015/"
             "map-config/melown/Melown-Earth-Intergeo-2017/mapConfig.json");
 
+    // acquire current time to measure how long each frame takes
+    vts::uint32 lastRenderTime = SDL_GetTicks();
+
     // keep processing window events
     while (!shouldClose)
     {
@@ -148,11 +151,15 @@ int main(int, char *[])
             }
         }
 
-        // update the map (both resources and rendering)
         updateResolution();
-        map->dataTick(); // update downloads
-        map->renderTickPrepare(); // update navigation etc.
-        map->renderTickRender(); // prepare the rendering data
+        // update downloads
+        map->dataTick();
+        // update navigation etc.
+        vts::uint32 currentRenderTime = SDL_GetTicks();
+        map->renderTickPrepare((currentRenderTime - lastRenderTime) * 1e-3);
+        lastRenderTime = currentRenderTime;
+        // prepare the rendering data
+        map->renderTickRender();
 
         // actually render the map
         vts::renderer::render(renderOptions, map->draws(),

@@ -150,12 +150,13 @@ void Map::renderInitialize()
     impl->renderInitialize();
 }
 
-void Map::renderTickPrepare()
+void Map::renderTickPrepare(double timeStepSeconds)
 {
+    assert(timeStepSeconds >= 0);
     impl->statistics.resetFrame();
     impl->statistics.renderTicks = ++impl->renderer.tickIndex;
     impl->resourceRenderTick();
-    impl->renderTickPrepare();
+    impl->renderTickPrepare(timeStepSeconds);
 }
 
 void Map::renderTickRender()

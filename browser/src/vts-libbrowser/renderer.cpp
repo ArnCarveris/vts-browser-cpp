@@ -73,7 +73,7 @@ vec4 column(const mat4 &m, uint32 index)
     return vec4(m(index, 0), m(index, 1), m(index, 2), m(index, 3));
 }
 
-void frustumPlanes(const mat4 &vp, vec4 planes[6])
+void frustumPlanes(const mat4 &vp, std::array<vec4, 6> &planes)
 {
     vec4 c0 = column(vp, 0);
     vec4 c1 = column(vp, 1);
@@ -181,6 +181,9 @@ void MapImpl::purgeViewCache()
     }
 
     renderer.traverseRoot.reset();
+
+    travel.clear();
+
     renderer.tilesetMapping.reset();
     statistics.resetFrame();
     draws = MapDraws();
@@ -189,7 +192,7 @@ void MapImpl::purgeViewCache()
     initialized = false;
 }
 
-const TileId MapImpl::roundId(TileId nodeId)
+TileId MapImpl::roundIdByTileBinaryOrder(TileId nodeId)
 {
     uint32 metaTileBinaryOrder = mapConfig->referenceFrame.metaBinaryOrder;
     return TileId (nodeId.lod,
@@ -236,21 +239,27 @@ Validity MapImpl::reorderBoundLayers(const NodeInfo &nodeInfo,
 
 bool MapImpl::visibilityTest(TraverseNode *trav)
 {
+    return false;
+    (void)trav;
+
+
+    /*
     assert(trav->meta);
     // aabb test
-    if (!aabbTest(trav->meta->aabbPhys, renderer.frustumPlanes))
+    //if (!aabbTest(trav->meta->aabbPhys, renderer.frustumPlanes))
         return false;
     // additional obb test
     if (trav->meta->obb)
     {
         TraverseNode::Obb &obb = *trav->meta->obb;
-        vec4 planes[6];
+        std::array<vec4, 6> planes;
         frustumPlanes(renderer.viewProj * obb.rotInv, planes);
         if (!aabbTest(obb.points, planes))
             return false;
     }
     // all tests passed
     return true;
+    */
 }
 
 bool MapImpl::coarsenessTest(TraverseNode *trav)
@@ -515,9 +524,12 @@ bool MapImpl::prerequisitesCheck()
     if (mapConfig->surfaceStack.empty())
         mapConfig->generateSurfaceStack();
 
-    renderer.traverseRoot = std::make_shared<TraverseNode>(nullptr, NodeInfo(
-                    mapConfig->referenceFrame, TileId(), false, *mapConfig));
-    renderer.traverseRoot->priority = std::numeric_limits<double>::infinity();
+    //renderer.traverseRoot = std::make_shared<TraverseNode>(nullptr, NodeInfo(
+    //                mapConfig->referenceFrame, TileId(), false, *mapConfig));
+    //renderer.traverseRoot->priority = std::numeric_limits<double>::infinity();
+
+    initializeTravelRoot();
+
     renderer.credits.merge(mapConfig.get());
     initializeNavigation();
     mapConfig->initializeCelestialBody();
@@ -529,7 +541,7 @@ bool MapImpl::prerequisitesCheck()
     return initialized;
 }
 
-void MapImpl::renderTickPrepare()
+void MapImpl::renderTickPrepare(double timeStepSeconds)
 {
     if (!prerequisitesCheck())
         return;
@@ -537,12 +549,15 @@ void MapImpl::renderTickPrepare()
     assert(!resources.auth || *resources.auth);
     assert(mapConfig && *mapConfig);
     assert(convertor);
-    assert(renderer.traverseRoot);
+    //assert(renderer.traverseRoot);
+    assert(travel.root);
 
-    updateNavigation();
+    updateNavigation(timeStepSeconds);
     updateSearch();
     updateSris();
-    traverseClearing(renderer.traverseRoot.get());
+    //traverseClearing(renderer.traverseRoot.get());
+
+    travelTickPrepare();
 }
 
 void MapImpl::renderCamera()
@@ -719,8 +734,11 @@ void MapImpl::renderTickRender()
         GpuTextureSpec::Mipmaps | GpuTextureSpec::Repeat);
 
     renderCamera();
-    traverseRender();
-    traversePreloadNodes();
+    //traverseRender();
+    //traversePreloadNodes();
+
+    travelTickRender();
+
     renderer.credits.tick(credits);
     for (const RenderTask &r : navigation.renders)
         draws.Infographic.emplace_back(r, this);
