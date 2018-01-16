@@ -207,10 +207,14 @@ void MapConfig::printSurfaceStack()
     std::ostringstream ss;
     ss << "Surface stack: " << std::endl;
     for (auto &l : surfaceStack)
+    {
+        std::ostringstream c;
+        c << std::setw(5) << std::setprecision(2) << l.color.transpose();
         ss << (l.alien ? "* " : "  ")
            << std::setw(100) << std::left << (std::string()
-           + "[" + boost::algorithm::join(l.surface->name, ",") + "]")
-           << " " << l.color.transpose() << std::endl;
+           + "[" + boost::algorithm::join(l.surface->name, ", ") + "]")
+           << " " << c.str() << std::endl;
+    }
     LOG(info3) << ss.str();
 }
 

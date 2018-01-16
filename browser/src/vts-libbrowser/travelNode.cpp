@@ -477,6 +477,7 @@ void MapImpl::travelUpdateMeta(TravelNode *trav)
     // prefetch internal textures
     if (node->geometry())
     {
+        assert(trav->surface);
         for (uint32 i = 0; i < node->internalTextureCount(); i++)
             preloadInternalTexture(trav, i);
     }
@@ -531,16 +532,19 @@ void MapImpl::renderNode(TravelNode *trav, const vec4f &uvClip)
     // mesh box
     if (options.debugRenderMeshBoxes)
     {
-        for (RenderTask &r : trav->renders.opaque)
+        RenderTask task;
+        task.mesh = getMeshRenderable(
+                    "internal://data/meshes/aabb.obj");
+        task.mesh->priority = std::numeric_limits<float>::infinity();
+        if (task.ready())
         {
-            RenderTask task;
-            task.model = r.model;
-            task.mesh = getMeshRenderable(
-                        "internal://data/meshes/aabb.obj");
-            task.mesh->priority = std::numeric_limits<float>::infinity();
-            task.color = vec4f(0, 0, 1, 1);
-            if (task.ready())
+            for (RenderTask &r : trav->renders.opaque)
+            {
+                task.model = r.model;
+                if (trav->surface)
+                    task.color = vec3to4f(trav->surface->color, task.color(3));
                 draws.Infographic.emplace_back(task, this);
+            }
         }
     }
 
@@ -839,17 +843,12 @@ void MapImpl::travelDetermineHierarchy(TravelNode *trav)
     uint32 current = trav->nodeInfo.nodeId().lod;
 
     // childs
-    if (coarsenessTest(trav))
-    {
-        // she is in deep
-        trav->travel->optimal.update(current);
-        travel.drawQueue.push_back(trav);
-    }
-    else
+    if (!coarsenessTest(trav))
     {
         // we need to go deeper
         auto children = vtslibs::vts::children(trav->nodeInfo.nodeId());
         uint32 i = 0;
+        uint32 childsCount = 0;
         bool ready = true;
         for (auto &it : trav->childs)
         {
@@ -858,16 +857,21 @@ void MapImpl::travelDetermineHierarchy(TravelNode *trav)
                 it = std::make_shared<TravelNode>(trav,
                         trav->nodeInfo.child(children[i]));
             }
-            if (it && !it->meta)
+            if (it)
             {
-                travelDetermineHierarchy(it.get());
-                ready = false;
+                childsCount++;
+                if (!it->meta)
+                {
+                    travelDetermineHierarchy(it.get());
+                    ready = false;
+                }
             }
             i++;
         }
-        if (ready)
+        if (ready && childsCount > 0)
         {
             // all children have meta data loaded
+            // descend
             for (auto &it : trav->childs)
             {
                 if (it)
@@ -877,13 +881,13 @@ void MapImpl::travelDetermineHierarchy(TravelNode *trav)
                         trav->travel->optimal.update(it->travel->optimal);
                 }
             }
-        }
-        else
-        {
-            // some children does not have meta, render this node
-            travel.drawQueue.push_back(trav);
+            return;
         }
     }
+
+    // render this node
+    trav->travel->optimal.update(current);
+    travel.drawQueue.push_back(trav);
 }
 
 void MapImpl::travelDetermineDrawLoads(TravelNode *trav)
@@ -919,13 +923,14 @@ void MapImpl::travelDetermineRenders(TravelNode *trav)
         task.mesh = getMeshRenderable(
                     "internal://data/meshes/sphere.obj");
         task.mesh->priority = std::numeric_limits<float>::infinity();
-        task.model = translationMatrix(trav->surrogatePhys)
-                * scaleMatrix(trav->nodeInfo.extents().size() * 0.03);
-        if (trav->surface)
-            task.color = vec3to4f(trav->surface->color,
-                                  task.color(3));
         if (task.ready())
+        {
+            task.model = translationMatrix(trav->surrogatePhys)
+                    * scaleMatrix(trav->nodeInfo.extents().size() * 0.03);
+            if (trav->surface)
+                task.color = vec3to4f(trav->surface->color, task.color(3));
             draws.Infographic.emplace_back(task, this);
+        }
     }
 
     // tile box
@@ -935,9 +940,9 @@ void MapImpl::travelDetermineRenders(TravelNode *trav)
         task.mesh = getMeshRenderable(
                     "internal://data/meshes/line.obj");
         task.mesh->priority = std::numeric_limits<float>::infinity();
-        task.color = vec4f(1, 0, 0, 1);
         if (task.ready())
         {
+            //task.color = vec4f(1, 0, 0, 1);
             static const uint32 cora[] = {
                 0, 0, 1, 2, 4, 4, 5, 6, 0, 1, 2, 3
             };
