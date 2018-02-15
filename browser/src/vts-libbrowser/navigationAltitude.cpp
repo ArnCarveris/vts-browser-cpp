@@ -48,9 +48,7 @@ double generalInterpolation(
     return a / b;
 }
 
-std::shared_ptr<TraverseNode> findTravById(
-        const std::shared_ptr<TraverseNode> &where,
-        const TileId &id)
+TravelNode *findTravById(TravelNode *where, const TileId &id)
 {
     assert(where);
     if (where->nodeInfo.nodeId().lod > id.lod)
@@ -59,29 +57,30 @@ std::shared_ptr<TraverseNode> findTravById(
         return where;
     for (auto &it : where->childs)
     {
-        auto r = findTravById(it, id);
+        if (!it || !it->meta)
+            continue;
+        auto *r = findTravById(it.get(), id);
         if (r)
             return r;
     }
     return nullptr;
 }
 
-std::shared_ptr<TraverseNode> findTravSds(
-        const std::shared_ptr<TraverseNode> &where,
+TravelNode *findTravSds(TravelNode *where,
         const vec2 &pointSds, uint32 maxLod)
 {
     assert(where && where->meta);
-    std::shared_ptr<TraverseNode> t = where;
+    TravelNode *t = where;
     while (t->nodeInfo.nodeId().lod < maxLod)
     {
-        auto p = t;
+        auto *p = t;
         for (auto &it : t->childs)
         {
-            if (!it->meta)
+            if (!it || !it->meta)
                 continue;
             if (!it->nodeInfo.inside(vecToUblas<math::Point2>(pointSds)))
                 continue;
-            t = it;
+            t = it.get();
             break;
         }
         if (t == p)
@@ -98,7 +97,7 @@ bool MapImpl::getPositionAltitude(double &result,
 {
     assert(convertor);
 
-    if (!renderer.traverseRoot || !renderer.traverseRoot->meta)
+    if (!travel.root || !travel.root->meta)
         return false;
 
     // find surface division coordinates (and appropriate node info)
@@ -163,7 +162,7 @@ bool MapImpl::getPositionAltitude(double &result,
     // find the actual corners
     double altitudes[4];
     uint32 minUsedLod = -1;
-    auto travRoot = findTravById(renderer.traverseRoot, info->nodeId());
+    auto *travRoot = findTravById(travel.root.get(), info->nodeId());
     if (!travRoot || !travRoot->meta)
         return false;
     for (int i = 0; i < 4; i++)
@@ -183,7 +182,7 @@ bool MapImpl::getPositionAltitude(double &result,
             RenderTask task;
             task.mesh = getMeshRenderable("internal://data/meshes/sphere.obj");
             task.mesh->priority = std::numeric_limits<float>::infinity();
-            task.model = translationMatrix(t->meta->surrogatePhys)
+            task.model = translationMatrix(t->surrogatePhys)
                     * scaleMatrix(t->nodeInfo.extents().size() * 0.031);
             task.color = vec4f(1.f, 1.f, 1.f, 1.f);
             if (*task.mesh)

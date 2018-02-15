@@ -180,8 +180,6 @@ void MapImpl::purgeViewCache()
         mapConfig->surfaceStack.clear();
     }
 
-    renderer.traverseRoot.reset();
-
     travel.clear();
 
     renderer.tilesetMapping.reset();
@@ -237,206 +235,6 @@ Validity MapImpl::reorderBoundLayers(const NodeInfo &nodeInfo,
     return Validity::Valid;
 }
 
-bool MapImpl::visibilityTest(TraverseNode *trav)
-{
-    return false;
-    (void)trav;
-
-
-    /*
-    assert(trav->meta);
-    // aabb test
-    //if (!aabbTest(trav->meta->aabbPhys, renderer.frustumPlanes))
-        return false;
-    // additional obb test
-    if (trav->meta->obb)
-    {
-        TraverseNode::Obb &obb = *trav->meta->obb;
-        std::array<vec4, 6> planes;
-        frustumPlanes(renderer.viewProj * obb.rotInv, planes);
-        if (!aabbTest(obb.points, planes))
-            return false;
-    }
-    // all tests passed
-    return true;
-    */
-}
-
-bool MapImpl::coarsenessTest(TraverseNode *trav)
-{
-    assert(trav->meta);
-    return coarsenessValue(trav) < options.maxTexelToPixelScale;
-}
-
-double MapImpl::coarsenessValue(TraverseNode *trav)
-{
-    bool applyTexelSize = trav->meta->flags()
-            & vtslibs::vts::MetaNode::Flag::applyTexelSize;
-    bool applyDisplaySize = trav->meta->flags()
-            & vtslibs::vts::MetaNode::Flag::applyDisplaySize;
-
-    if (!applyTexelSize && !applyDisplaySize)
-        return std::numeric_limits<double>::infinity();
-
-    double result = 0;
-
-    if (applyTexelSize)
-    {
-        vec3 up = renderer.perpendicularUnitVector * trav->meta->texelSize;
-        for (const vec3 &c : trav->meta->cornersPhys)
-        {
-            vec3 c1 = c - up * 0.5;
-            vec3 c2 = c1 + up;
-            c1 = vec4to3(renderer.viewProj * vec3to4(c1, 1), true);
-            c2 = vec4to3(renderer.viewProj * vec3to4(c2, 1), true);
-            double len = std::abs(c2[1] - c1[1]) * renderer.windowHeight * 0.5;
-            result = std::max(result, len);
-        }
-    }
-
-    if (applyDisplaySize)
-    {
-        // todo
-    }
-
-    return result;
-}
-
-void MapImpl::renderNode(TraverseNode *trav, uint32 originalLod,
-                         const vec4f &uvClip)
-{
-    assert(trav->meta);
-    assert(!trav->rendersEmpty());
-    assert(trav->rendersReady());
-    assert(visibilityTest(trav));
-
-    // statistics
-    statistics.meshesRenderedTotal++;
-    statistics.meshesRenderedPerLod[std::min<uint32>(
-        trav->nodeInfo.nodeId().lod, MapStatistics::MaxLods - 1)]++;
-
-    // updates
-    trav->lastTimeTouched = renderer.tickIndex;
-    uint32 lodDiff = (originalLod == (uint32)-1) ? 0
-                : (originalLod - trav->nodeInfo.nodeId().lod);
-
-    // meshes
-    if (lodDiff <= options.coarserLodOffset
-            && (options.debugRenderOpaqueMeshes
-                || options.debugRenderTransparentMeshes))
-    {
-        // regular meshes
-        if (options.debugRenderOpaqueMeshes)
-        {
-            for (const RenderTask &r : trav->opaque)
-                draws.opaque.emplace_back(r, uvClip.data(), this);
-        }
-        if (options.debugRenderTransparentMeshes)
-        {
-            for (const RenderTask &r : trav->transparent)
-                draws.transparent.emplace_back(r, uvClip.data(), this);
-        }
-    }
-    else if (options.debugRenderGridMeshes && *resources.gridTexture)
-    {
-        // grids
-        for (const RenderTask &r : trav->opaque)
-        {
-            DrawTask d(r, uvClip.data(), this);
-            if (!d.texColor)
-                continue;
-            d.texColor = resources.gridTexture->info.userData;
-            d.externalUv = true;
-            d.color[0] = d.color[1] = d.color[2] = d.color[3] = 1;
-            d.flatShading = false;
-            updateUvsForGrids(d.uvm, d.uvClip);
-            draws.grids.push_back(std::move(d));
-            statistics.meshesRenderedGrids++;
-        }
-    }
-
-    if (lodDiff == 0)
-    {
-        // surrogate
-        if (options.debugRenderSurrogates)
-        {
-            RenderTask task;
-            task.mesh = getMeshRenderable("internal://data/meshes/sphere.obj");
-            task.mesh->priority = std::numeric_limits<float>::infinity();
-            task.model = translationMatrix(trav->meta->surrogatePhys)
-                    * scaleMatrix(trav->nodeInfo.extents().size() * 0.03);
-            if (trav->meta->surface)
-                task.color = vec3to4f(trav->meta->surface->color,
-                                      task.color(3));
-            if (task.ready())
-                draws.Infographic.emplace_back(task, this);
-        }
-
-        // mesh box
-        if (options.debugRenderMeshBoxes)
-        {
-            for (RenderTask &r : trav->opaque)
-            {
-                RenderTask task;
-                task.model = r.model;
-                task.mesh = getMeshRenderable(
-                            "internal://data/meshes/aabb.obj");
-                task.mesh->priority = std::numeric_limits<float>::infinity();
-                task.color = vec4f(0, 0, 1, 1);
-                if (task.ready())
-                    draws.Infographic.emplace_back(task, this);
-            }
-        }
-
-        // tile box
-        if (options.debugRenderTileBoxes)
-        {
-            RenderTask task;
-            task.mesh = getMeshRenderable("internal://data/meshes/line.obj");
-            task.mesh->priority = std::numeric_limits<float>::infinity();
-            task.color = vec4f(1, 0, 0, 1);
-            if (task.ready())
-            {
-                static const uint32 cora[] = {
-                    0, 0, 1, 2, 4, 4, 5, 6, 0, 1, 2, 3
-                };
-                static const uint32 corb[] = {
-                    1, 2, 3, 3, 5, 6, 7, 7, 4, 5, 6, 7
-                };
-                for (uint32 i = 0; i < 12; i++)
-                {
-                    vec3 a = trav->meta->cornersPhys[cora[i]];
-                    vec3 b = trav->meta->cornersPhys[corb[i]];
-                    task.model = lookAt(a, b);
-                    draws.Infographic.emplace_back(task, this);
-                }
-            }
-        }
-    }
-
-    // credits
-    for (auto &it : trav->meta->credits)
-        renderer.credits.hit(Credits::Scope::Imagery, it,
-                             trav->nodeInfo.distanceFromRoot());
-}
-
-void MapImpl::renderNodePartial(TraverseNode *trav, uint32 originalLod,
-                                         vec4f uvClip)
-{
-    if (!trav->parent || !trav->parent->meta->surface)
-        return;
-
-    auto id = trav->nodeInfo.nodeId();
-    float *arr = uvClip.data();
-    updateRangeToHalf(arr[0], arr[2], id.x % 2);
-    updateRangeToHalf(arr[1], arr[3], 1 - (id.y % 2));
-
-    if (!trav->parent->rendersEmpty() && trav->parent->rendersReady())
-        renderNode(trav->parent, originalLod, uvClip);
-    else
-        renderNodePartial(trav->parent, originalLod, uvClip);
-}
-
 void MapImpl::touchDraws(const RenderTask &task)
 {
     if (task.meshAgg)
@@ -450,15 +248,6 @@ void MapImpl::touchDraws(const RenderTask &task)
 void MapImpl::touchDraws(const std::vector<RenderTask> &renders)
 {
     for (auto &it : renders)
-        touchDraws(it);
-}
-
-void MapImpl::touchDraws(TraverseNode *trav)
-{
-    trav->lastTimeTouched = renderer.tickIndex;
-    for (auto &it : trav->opaque)
-        touchDraws(it);
-    for (auto &it : trav->transparent)
         touchDraws(it);
 }
 
@@ -785,33 +574,6 @@ void MapImpl::applyCameraRotationNormalization(vec3 &rot)
     }
 }
 
-double MapImpl::travDistance(TraverseNode *trav, const vec3 pointPhys)
-{
-    if (!vtslibs::vts::empty(trav->meta->geomExtents)
-            && !trav->nodeInfo.srs().empty())
-    {
-        // todo periodicity
-        vec2 fl = vecFromUblas<vec2>(trav->nodeInfo.extents().ll);
-        vec2 fu = vecFromUblas<vec2>(trav->nodeInfo.extents().ur);
-        vec3 el = vec2to3(fl, trav->meta->geomExtents.z.min);
-        vec3 eu = vec2to3(fu, trav->meta->geomExtents.z.max);
-        vec3 p = convertor->convert(pointPhys,
-            Srs::Physical, trav->nodeInfo.node());
-        return aabbPointDist(p, el, eu);
-    }
-    return aabbPointDist(pointPhys, trav->meta->aabbPhys[0],
-            trav->meta->aabbPhys[1]);
-}
-
-float MapImpl::computeResourcePriority(TraverseNode *trav)
-{
-    if (options.traverseMode == TraverseMode::Hierarchical)
-        return 1.f / trav->nodeInfo.distanceFromRoot();
-    if ((trav->hash + renderer.tickIndex) % 4 == 0) // skip expensive function
-        return (float)(1e6 / (travDistance(trav, renderer.focusPosPhys) + 1));
-    return trav->priority;
-}
-
 double MapImpl::getMapRenderProgress()
 {
     uint32 active = statistics.currentResourcePreparing;
@@ -825,17 +587,6 @@ double MapImpl::getMapRenderProgress()
             = std::max(resources.progressEstimationMaxResources, active);
     return double(resources.progressEstimationMaxResources - active)
             / resources.progressEstimationMaxResources;
-}
-
-std::shared_ptr<Resource> MapImpl::preloadInternalTexture(TraverseNode *trav,
-                                                       uint32 subMeshIndex)
-{
-    UrlTemplate::Vars vars(trav->nodeInfo.nodeId(),
-            vtslibs::vts::local(trav->nodeInfo), subMeshIndex);
-    std::shared_ptr<Resource> res = getTexture(
-                trav->meta->surface->surface->urlIntTex(vars));
-    res->updatePriority(trav->priority);
-    return res;
 }
 
 } // namespace vts

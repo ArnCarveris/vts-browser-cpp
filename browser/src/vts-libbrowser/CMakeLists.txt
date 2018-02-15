@@ -76,7 +76,6 @@ set(SRC_LIST
     obj.cpp
     options.cpp
     renderer.cpp
-    rendererTraversal.cpp
     rendererUtilities.cpp
     travelNode.cpp
     auth.cpp

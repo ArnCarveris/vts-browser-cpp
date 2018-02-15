@@ -29,127 +29,6 @@
 namespace vts
 {
 
-static const vec3 Nan3 = {
-    std::numeric_limits<double>::quiet_NaN(),
-    std::numeric_limits<double>::quiet_NaN(),
-    std::numeric_limits<double>::quiet_NaN()
-};
-
-static const vec3 Inf3 = {
-    std::numeric_limits<double>::infinity(),
-    std::numeric_limits<double>::infinity(),
-    std::numeric_limits<double>::infinity()
-};
-
-void MapImpl::Traveler::clear()
-{
-    root.reset();
-    loadMetaQueue.clear();
-    loadDrawsQueue.clear();
-    drawQueue.clear();
-}
-
-class TravelNode : public std::enable_shared_from_this<TravelNode>
-{
-public:
-    // hierarchy
-    std::array<std::shared_ptr<TravelNode>, 4> childs;
-    std::array<bool, 4> childsAvailable;
-    const NodeInfo nodeInfo;
-    TravelNode *const parent;
-
-    // meta
-    std::vector<std::shared_ptr<MetaTile>> metaTiles;
-    boost::optional<vtslibs::vts::MetaNode> meta;
-    const MapConfig::SurfaceStackItem *surface;
-
-    // visibility
-    struct Obb
-    {
-        std::array<vec3, 2> points;
-        mat4 rotInv;
-        Obb()
-        {
-            points.fill(Nan3);
-        }
-    };
-    boost::optional<Obb> obb;
-    std::array<vec3, 8> cornersPhys;
-    std::array<vec3, 2> aabbPhys;
-    vec3 surrogatePhys;
-
-    // renders
-    struct Renders
-    {
-        std::vector<RenderTask> grid, opaque, transparent;
-        std::vector<vtslibs::registry::CreditId> credits;
-
-        void clear()
-        {
-            grid.clear();
-            opaque.clear();
-            transparent.clear();
-            credits.clear();
-        }
-
-        bool ready() const
-        {
-            for (auto &it : opaque)
-                if (!it.ready())
-                    return false;
-            for (auto &it : transparent)
-                if (!it.ready())
-                    return false;
-            return true;
-        }
-
-        bool empty() const
-        {
-            return opaque.empty() && transparent.empty();
-        }
-    } renders;
-
-    // loading draws
-    struct LoadingDraws
-    {
-        std::shared_ptr<MeshAggregate> meshAgg;
-        // todo
-    };
-    std::shared_ptr<LoadingDraws> loadingDraws;
-
-    // travel
-    struct Travel
-    {
-        struct LodRange
-        {
-            uint16 a, b;
-            void update(uint16 c)
-            {
-                a = std::min(a, c);
-                b = std::max(b, c);
-            }
-            void update(const LodRange &c)
-            {
-                a = std::min(a, c.a);
-                b = std::max(b, c.b);
-            }
-        } optimal;
-
-        Travel() : optimal{65535, 0}
-        {}
-    };
-    boost::optional<Travel> travel;
-
-    TravelNode(TravelNode *const parent, const NodeInfo &info)
-        : childsAvailable{false, false, false, false},
-          nodeInfo(info), parent(parent), surface(nullptr)
-    {
-        cornersPhys.fill(Nan3);
-        aabbPhys.fill(Nan3);
-        surrogatePhys = Nan3;
-    }
-};
-
 namespace
 {
 
@@ -217,7 +96,81 @@ void updateRangeToHalf(float &a, float &b, int which)
     }
 }
 
+static const vec3 Nan3 = {
+    std::numeric_limits<double>::quiet_NaN(),
+    std::numeric_limits<double>::quiet_NaN(),
+    std::numeric_limits<double>::quiet_NaN()
+};
+
+static const vec3 Inf3 = {
+    std::numeric_limits<double>::infinity(),
+    std::numeric_limits<double>::infinity(),
+    std::numeric_limits<double>::infinity()
+};
+
 } // namespace
+
+
+void MapImpl::Traveler::clear()
+{
+    root.reset();
+    loadMetaQueue.clear();
+    loadDrawsQueue.clear();
+    drawQueue.clear();
+}
+
+TravelNode::Obb::Obb()
+{
+    points.fill(Nan3);
+}
+
+void TravelNode::Renders::clear()
+{
+    grid.clear();
+    opaque.clear();
+    transparent.clear();
+    credits.clear();
+}
+
+bool TravelNode::Renders::ready() const
+{
+    for (auto &it : opaque)
+        if (!it.ready())
+            return false;
+    for (auto &it : transparent)
+        if (!it.ready())
+            return false;
+    return true;
+}
+
+bool TravelNode::Renders::empty() const
+{
+    return opaque.empty() && transparent.empty();
+}
+
+void TravelNode::Travel::LodRange::update(uint16 c)
+{
+    a = std::min(a, c);
+    b = std::max(b, c);
+}
+
+void TravelNode::Travel::LodRange::update(const LodRange &c)
+{
+    a = std::min(a, c.a);
+    b = std::max(b, c.b);
+}
+
+TravelNode::Travel::Travel() : optimal{65535, 0}
+{}
+
+TravelNode::TravelNode(TravelNode *const parent, const NodeInfo &info)
+    : childsAvailable{false, false, false, false},
+      nodeInfo(info), parent(parent), surface(nullptr)
+{
+    cornersPhys.fill(Nan3);
+    aabbPhys.fill(Nan3);
+    surrogatePhys = Nan3;
+}
 
 bool MapImpl::visibilityTest(TravelNode *trav)
 {

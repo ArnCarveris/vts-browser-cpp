@@ -96,48 +96,67 @@ public:
     bool ready() const;
 };
 
-class TraverseNode
+class TravelNode : public std::enable_shared_from_this<TravelNode>
 {
 public:
+    // hierarchy
+    std::array<std::shared_ptr<TravelNode>, 4> childs;
+    std::array<bool, 4> childsAvailable;
+    const NodeInfo nodeInfo;
+    TravelNode *const parent;
+
+    // meta
+    std::vector<std::shared_ptr<MetaTile>> metaTiles;
+    boost::optional<vtslibs::vts::MetaNode> meta;
+    const MapConfig::SurfaceStackItem *surface;
+
+    // visibility
     struct Obb
     {
-        vec3 points[2];
+        std::array<vec3, 2> points;
         mat4 rotInv;
+        Obb();
     };
+    boost::optional<Obb> obb;
+    std::array<vec3, 8> cornersPhys;
+    std::array<vec3, 2> aabbPhys;
+    vec3 surrogatePhys;
 
-    struct MetaInfo : public vtslibs::vts::MetaNode
+    // renders
+    struct Renders
     {
-        std::vector<std::shared_ptr<MetaTile>> metaTiles;
+        std::vector<RenderTask> grid, opaque, transparent;
         std::vector<vtslibs::registry::CreditId> credits;
-        boost::optional<Obb> obb;
-        vec3 cornersPhys[8];
-        vec3 aabbPhys[2];
-        vec3 surrogatePhys;
-        const MapConfig::SurfaceStackItem *surface;
-        MetaInfo(const vtslibs::vts::MetaNode &node);
+
+        void clear();
+        bool ready() const;
+        bool empty() const;
+    } renders;
+
+    // loading draws
+    struct LoadingDraws
+    {
+        std::shared_ptr<MeshAggregate> meshAgg;
+        // todo
     };
+    std::shared_ptr<LoadingDraws> loadingDraws;
 
-    boost::optional<MetaInfo> meta;
-    std::vector<std::shared_ptr<TraverseNode>> childs;
-    std::vector<RenderTask> opaque;
-    std::vector<RenderTask> transparent;
-    NodeInfo nodeInfo;
-    TraverseNode *const parent;
-    const uint32 hash;
-    uint32 lastTimeAccessed;
-    uint32 lastTimeTouched;
-    float priority;
-    bool coarsestWithData;
+    // travel
+    struct Travel
+    {
+        struct LodRange
+        {
+            uint16 a, b;
+            void update(uint16 c);
+            void update(const LodRange &c);
+        } optimal;
 
-    TraverseNode(TraverseNode *parent, const NodeInfo &nodeInfo);
-    ~TraverseNode();
-    void clearAll();
-    void clearRenders();
-    bool rendersReady() const;
-    bool rendersEmpty() const;
+        Travel();
+    };
+    boost::optional<Travel> travel;
+
+    TravelNode(TravelNode *const parent, const NodeInfo &info);
 };
-
-class TravelNode;
 
 class MapImpl
 {
@@ -200,7 +219,6 @@ public:
     {
     public:
         Credits credits;
-        std::shared_ptr<TraverseNode> traverseRoot;
         std::shared_ptr<TilesetMapping> tilesetMapping;
         std::vector<TileId> nodesToPreload;
         mat4 viewProj;
@@ -300,31 +318,6 @@ public:
     void renderCamera();
     bool prerequisitesCheck();
     void applyCameraRotationNormalization(vec3 &rot);
-
-    // traversal methods
-    float computeResourcePriority(TraverseNode *trav);
-    void touchDraws(TraverseNode *trav);
-    bool visibilityTest(TraverseNode *trav);
-    bool coarsenessTest(TraverseNode *trav);
-    double coarsenessValue(TraverseNode *trav);
-    void renderNode(TraverseNode *trav, uint32 originalLod = -1,
-                    const vec4f &uvClip = vec4f(-1,-1,2,2));
-    void renderNodePartial(TraverseNode *trav, uint32 originalLod,
-                    vec4f uvClip);
-    std::shared_ptr<Resource> preloadInternalTexture(TraverseNode *trav,
-                                                  uint32 subMeshIndex);
-    void travBalancedPropagateUp(TraverseNode *trav, uint32 originalLod);
-    bool travDetermineMeta(TraverseNode *trav);
-    bool travDetermineDraws(TraverseNode *trav);
-    double travDistance(TraverseNode *trav, const vec3 pointPhys);
-    bool travInit(TraverseNode *trav, bool skipStatistics = false);
-    void travModeHierarchical(TraverseNode *trav, bool loadOnly);
-    void travModeFlat(TraverseNode *trav);
-    void travModeBalanced(TraverseNode *trav);
-    void travPreloadNodes(TraverseNode *trav, TileId target);
-    void traverseRender();
-    void traversePreloadNodes();
-    void traverseClearing(TraverseNode *trav);
 
     // travel methods
     bool visibilityTest(TravelNode *trav);
