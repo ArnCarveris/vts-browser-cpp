@@ -73,9 +73,6 @@ struct gdalInitClass
 class CoordManipImpl : public CoordManip
 {
     vtslibs::vts::MapConfig &mapconfig;
-    const std::string &searchSrs;
-    const std::string &customSrs1;
-    const std::string &customSrs2;
 
     std::unordered_map<std::string, std::shared_ptr<vtslibs::vts::CsConvertor>>
         convertors;
@@ -88,8 +85,7 @@ public:
             const std::string &searchSrs,
             const std::string &customSrs1,
             const std::string &customSrs2) :
-        mapconfig(mapconfig), searchSrs(searchSrs),
-        customSrs1(customSrs1), customSrs2(customSrs2)
+        mapconfig(mapconfig)
     {
         // create geodesic
         {
@@ -108,7 +104,7 @@ public:
     {
         vtslibs::registry::Srs s;
         s.comment = name;
-        s.srsDef = def;
+        s.srsDef = geo::SrsDefinition::fromString(def);
         mapconfig.srs.replace(name, s);
     }
 

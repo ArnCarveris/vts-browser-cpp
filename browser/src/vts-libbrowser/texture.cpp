@@ -31,11 +31,15 @@ namespace vts
 {
 
 GpuTextureSpec::GpuTextureSpec()
-    : width(0), height(0), components(0), flags(None)
+    : width(0), height(0), components(0),
+      type(GpuTypeEnum::UnsignedByte), internalFormat(0),
+      flags(None)
 {}
 
 GpuTextureSpec::GpuTextureSpec(const Buffer &buffer)
-    : width(0), height(0), components(0), flags(None)
+    : width(0), height(0), components(0),
+      type(GpuTypeEnum::UnsignedByte), internalFormat(0),
+      flags(None)
 {
     decodeImage(buffer, this->buffer, width, height, components);
 }
@@ -55,6 +59,23 @@ void GpuTextureSpec::verticalFlip()
     }
 }
 
+uint32 GpuTextureSpec::expectedSize() const
+{
+    return width * height * components * gpuTypeSize(type);
+}
+
+Buffer GpuTextureSpec::encodePng() const
+{
+    if (type != GpuTypeEnum::UnsignedByte)
+    {
+        LOGTHROW(err2, std::runtime_error) << "Unsigned byte is the only "
+                                    "supported image type for png encode.";
+    }
+    Buffer out;
+    vts::encodePng(buffer, out, width, height, components);
+    return out;
+}
+
 GpuTexture::GpuTexture(MapImpl *map, const std::string &name) :
     Resource(map, name, FetchTask::ResourceType::Texture),
     flags(GpuTextureSpec::None)
@@ -64,6 +85,23 @@ void GpuTexture::load()
 {
     LOG(info2) << "Loading (gpu) texture <" << name << ">";
     GpuTextureSpec spec(reply.content);
+
+    if (map->options.debugExtractRawResources)
+    {
+        static const std::string prefix = "extracted/";
+        std::string b, c;
+        std::string path = prefix
+                + convertNameToFolderAndFile(this->name, b, c)
+                + ".png";
+        if (!boost::filesystem::exists(path))
+        {
+            boost::filesystem::create_directories(prefix + b);
+            Buffer out;
+            encodePng(spec.buffer, out, spec.width, spec.height, spec.components);
+            writeLocalFileBuffer(path, out);
+        }
+    }
+
     spec.verticalFlip();
     spec.flags = flags;
     map->callbacks.loadTexture(info, spec);

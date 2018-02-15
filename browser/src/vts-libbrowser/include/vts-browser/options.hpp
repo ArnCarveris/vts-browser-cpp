@@ -209,6 +209,8 @@ public:
     bool debugRenderObjectPosition;
     bool debugRenderTargetPosition;
     bool debugRenderAltitudeShiftCorners;
+    bool debugRenderNoMeshes;
+    bool debugExtractRawResources;
 };
 
 class VTS_API MapCallbacks

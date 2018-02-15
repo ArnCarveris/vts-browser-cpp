@@ -58,6 +58,12 @@ public:
     //   the buffer is not zeroed
     void allocate(uint32 size);
 
+    // allocates a new buffer of the specified size
+    //   all previous content (up to the size of the new buffer) is preserved
+    //   any new space is not zeroed
+    // this may invalidate all pointers
+    void resize(uint32 size);
+
     void free();
 
     char *data() const { return data_; }
@@ -87,6 +93,7 @@ public:
 
 VTS_API void addInternalMemoryData(const std::string name,
                                    const unsigned char *data, size_t size);
+VTS_API bool existsInternalMemoryBuffer(const std::string &path);
 
 } // detail
 

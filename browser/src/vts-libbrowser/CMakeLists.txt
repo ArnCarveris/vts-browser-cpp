@@ -1,31 +1,34 @@
 
 set(EXTRA_SRC_LIST)
 set(EXTRA_LIB_DEPS)
-set(EXTRA_MODULE_DEPS)
+set(EXTRA_LIB_MODULES)
 
-if(IOS)
+if(BUILDSYS_IOS)
 
     # ios
-    find_package(ZLIB REQUIRED)
-    include_directories(${ZLIB_INCLUDE_DIRS})
-    list(APPEND EXTRA_LIB_DEPS ${ZLIB_LIBRARIES} iconv objc "-framework CoreGraphics")
-    list(APPEND EXTRA_SRC_LIST fetcher/ios.mm image/ios.mm)
+    list(APPEND EXTRA_LIB_DEPS iconv objc "-framework CoreGraphics")
+    list(APPEND EXTRA_SRC_LIST fetcher/ios.mm)
 
 else()
 
     # desktop
-    find_package(JPEG REQUIRED)
-    find_package(PNG REQUIRED)
     find_package(CURL REQUIRED)
     add_subdirectory(fetcher/http)
     include_directories(fetcher)
-    list(APPEND EXTRA_MODULE_DEPS http JPEG PNG)
-    list(APPEND EXTRA_SRC_LIST fetcher/curl.cpp image/desktop.cpp)
+    list(APPEND EXTRA_LIB_MODULES http)
+    list(APPEND EXTRA_SRC_LIST fetcher/curl.cpp)
 
 endif()
 
-define_module(LIBRARY vts-browser DEPENDS vts-libs-nucleus jsoncpp
-    ${EXTRA_MODULE_DEPS})
+find_package(ZLIB REQUIRED)
+find_package(PNG REQUIRED)
+find_package(JPEG REQUIRED)
+include_directories(SYSTEM ${ZLIB_INCLUDE_DIRS})
+include_directories(SYSTEM ${PNG_INCLUDE_DIRS})
+include_directories(SYSTEM ${JPEG_INCLUDE_DIRS})
+
+define_module(LIBRARY vts-browser DEPENDS vts-libs-nucleus
+    jsoncpp ZLIB PNG JPEG ${EXTRA_LIB_MODULES})
 
 set(PUB_HDR_LIST
     include/vts-browser/buffer.hpp
@@ -56,6 +59,7 @@ set(HDR_LIST
     cache.hpp
     piha.hpp
     threadName.hpp
+    json.hpp
 )
 
 set(SRC_LIST
@@ -88,8 +92,10 @@ set(SRC_LIST
     log.cpp
     boostProgramOptions.cpp
     sri.cpp
-    image.cpp
     threadName.cpp
+    image.cpp
+    libPng.cpp
+    libJpeg.cpp
     ${EXTRA_SRC_LIST}
 )
 
@@ -106,7 +112,7 @@ buildsys_position_independent(${MODULE_LIBRARIES})
 #######################################################################
 # Install
 
-if(NOT IOS)
+if(NOT BUILDSYS_EMBEDDED)
 
 set(VTSBROWSER_LIBRARIES vts-browser)
 

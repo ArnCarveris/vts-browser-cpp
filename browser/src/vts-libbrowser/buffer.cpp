@@ -97,6 +97,19 @@ void Buffer::allocate(uint32 size)
                 << size << " bytes";
 }
 
+void Buffer::resize(uint32 size)
+{
+    char *tmp = (char*)realloc(data_, size);
+    if (!tmp)
+    {
+        LOGTHROW(err2, std::runtime_error)
+                << "Not enough memory for buffer reallocation, requested "
+                << size << " bytes";
+    }
+    this->size_ = size;
+    data_ = tmp;
+}
+
 void Buffer::free()
 {
     ::free(data_);
@@ -106,8 +119,10 @@ void Buffer::free()
 
 void writeLocalFileBuffer(const std::string &path, const Buffer &buffer)
 {
-    boost::filesystem::create_directories(
-                boost::filesystem::path(path).parent_path());
+    std::string folderPath = boost::filesystem::path(path)
+            .parent_path().c_str();
+    if (!folderPath.empty())
+        boost::filesystem::create_directories(folderPath);
     FILE *f = fopen(path.c_str(), "wb");
     if (!f)
         LOGTHROW(err1, std::runtime_error) << "Failed to write file <"
@@ -175,8 +190,13 @@ uint32 Wrapper::position() const
 void addInternalMemoryData(const std::string name,
                            const unsigned char *data, size_t size)
 {
-    assert(dataMap().find(name) == dataMap().end());
+    assert(!existsInternalMemoryBuffer(name));
     dataMap()[name] = std::make_pair(size, data);
+}
+
+bool existsInternalMemoryBuffer(const std::string &path)
+{
+    return dataMap().find(path) != dataMap().end();
 }
 
 } // namespace detail

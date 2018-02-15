@@ -34,6 +34,7 @@ set(DATA_LIST
     data/textures/compas.png
     data/textures/helper.jpg
     data/textures/grid.png
+    data/textures/atmosphere/density-512-512-1.0100000-7.0000000.png
 )
 
 pack_data(initializeRenderData)
@@ -47,7 +48,7 @@ buildsys_soversion(vts-renderer ${vts-browser_SO_VERSION})
 buildsys_target_compile_definitions(vts-renderer ${MODULE_DEFINITIONS})
 buildsys_position_independent(${MODULE_LIBRARIES})
 
-if(IOS)
+if(BUILDSYS_IOS)
     target_compile_definitions(vts-renderer PRIVATE VTSR_OPENGLES)
 endif()
 
@@ -56,7 +57,7 @@ endif()
 #######################################################################
 # Install
 
-if(NOT IOS)
+if(NOT BUILDSYS_EMBEDDED)
 
 set(VTSRENDERER_LIBRARIES vts-renderer)
 

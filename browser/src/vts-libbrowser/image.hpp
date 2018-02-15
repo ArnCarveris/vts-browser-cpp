@@ -33,8 +33,17 @@
 namespace vts
 {
 
+void decodePng(const Buffer &in, Buffer &out,
+               uint32 &width, uint32 &height, uint32 &components);
+
+void decodeJpeg(const Buffer &in, Buffer &out,
+                uint32 &width, uint32 &height, uint32 &components);
+
 void decodeImage(const Buffer &in, Buffer &out,
                  uint32 &width, uint32 &height, uint32 &components);
+
+void encodePng(const Buffer &in, Buffer &out,
+               uint32 width, uint32 height, uint32 components);
 
 } // namespace vts
 

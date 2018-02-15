@@ -1,8 +1,13 @@
 # bootstrap build system
-cmake_minimum_required(VERSION 2.8.11)
+cmake_minimum_required(VERSION 3.5.1)
 project(vts-browser)
 
-cmake_policy(SET CMP0004 OLD) # because SDL installed on some systems has improperly configured libraries
+if (APPLE AND (CMAKE_VERSION VERSION_LESS 3.9.1))
+    message(FATAL_ERROR CMake 3.9.1 or newer is required on apple)
+    # earlier versions of CMake on apple had an error that include paths were not considered SYSTEM where they should be
+endif()
+
+cmake_policy(SET CMP0042 NEW) # use rpath
 
 # by default, this is OSS build (can be overriden by customer machinery)
 set(BUILDSYS_DEFAULT_CUSTOMER_NAME oss)
@@ -23,13 +28,13 @@ include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 find_package(GDAL 2 REQUIRED)
 include_directories(SYSTEM ${GDAL_INCLUDE_DIR})
 find_package(Proj REQUIRED)
-include_directories(${PROJ_INCLUDE_DIR})
+include_directories(SYSTEM ${PROJ_INCLUDE_DIR})
 find_package(GeographicLib REQUIRED)
-include_directories(${GEOGRAPHICLIB_INCLUDE_DIR})
+include_directories(SYSTEM ${GEOGRAPHICLIB_INCLUDE_DIR})
 find_package(JsonCPP REQUIRED)
-include_directories(${JSONCPP_INCLUDE_DIR})
+include_directories(SYSTEM ${JSONCPP_INCLUDE_DIR})
 find_package(Eigen3 REQUIRED)
-include_directories(${EIGEN3_INCLUDE_DIR})
+include_directories(SYSTEM ${EIGEN3_INCLUDE_DIR})
 add_subdirectory(src/glad)
 
 # vts dependencies
@@ -60,7 +65,7 @@ include(cmake/pack_data.cmake)
 
 # vts browser
 message(STATUS "including vts browser and renderer libraries")
-if(IOS)
+if(BUILDSYS_EMBEDDED)
     set(LIB_TYPE STATIC)
     set(LIB_VIS PUBLIC)
 else()
@@ -73,7 +78,7 @@ add_subdirectory(src/vts-librenderer)
 include_directories(src/vts-librenderer/include)
 
 # application
-if(IOS)
+if(BUILDSYS_IOS)
 
     # ios application
     message(STATUS "including vts-browser-ios")
@@ -82,8 +87,9 @@ if(IOS)
 else()
 
     # find SDL
+    cmake_policy(SET CMP0004 OLD) # because SDL installed on some systems has improperly configured libraries
     find_package(SDL2 REQUIRED)
-    include_directories(${SDL2_INCLUDE_DIR})
+    include_directories(SYSTEM ${SDL2_INCLUDE_DIR})
 
     # minimal application
     message(STATUS "including vts-browser-minimal")
@@ -92,7 +98,6 @@ else()
     # desktop application
     message(STATUS "including vts-browser-desktop")
     add_subdirectory(src/nuklear)
-    include_directories(src/nuklear)
     add_subdirectory(src/vts-browser-desktop)
 
 endif()

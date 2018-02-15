@@ -24,55 +24,30 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef STATISTICS_H_wqieufhbvgjh
-#define STATISTICS_H_wqieufhbvgjh
-
-#include "foundation.hpp"
+#include <jsoncpp/json.hpp>
 
 namespace vts
 {
 
-class VTS_API MapStatistics
+inline Json::Value stringToJson(const std::string &s)
 {
-public:
-    MapStatistics();
-    ~MapStatistics();
-    void resetAll();
-    void resetFrame();
+    Json::CharReaderBuilder builder;
+    auto r = builder.newCharReader();
+    Json::Value val;
+    std::string errs;
+    if (!r->parse(s.data(), s.data() + s.size(), &val, &errs))
+        LOGTHROW(err2, std::runtime_error) << errs;
+    return val;
+}
 
-    static const uint32 MaxLods = 25;
-
-    // frame statistics
-
-    uint32 meshesRenderedTotal;
-    uint32 meshesRenderedPerLod[MaxLods];
-    uint32 meshesRenderedGrids;
-    uint32 metaNodesTraversedTotal;
-    uint32 metaNodesTraversedPerLod[MaxLods];
-
-    // global statistics
-
-    uint32 resourcesIgnored;
-    uint32 resourcesDownloaded;
-    uint32 resourcesDiskLoaded;
-    uint32 resourcesProcessLoaded;
-    uint32 resourcesReleased;
-    uint32 resourcesFailed;
-    uint32 renderTicks;
-    uint32 dataTicks;
-
-    // current statistics
-
-    uint64 currentGpuMemUse;
-    uint64 currentRamMemUse;
-    uint32 currentResources;
-    uint32 currentResourceDownloads;
-    uint32 currentResourcePreparing;
-    uint32 currentNodeMetaUpdates;
-    uint32 currentNodeDrawsUpdates;
-    NavigationMode currentNavigationMode;
-};
+inline std::string jsonToString(const Json::Value &value)
+{
+    Json::StreamWriterBuilder builder;
+    std::ostringstream ss;
+    builder.newStreamWriter()->write(value, &ss);
+    return ss.str();
+}
 
 } // namespace vts
 
-#endif
+

@@ -6,7 +6,9 @@
 /obj-*
 /.vscode
 /corrupted
+/extracted
 /bin
 /lib
 /build*
+/density-*.png
 

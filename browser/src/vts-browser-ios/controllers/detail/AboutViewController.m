@@ -36,12 +36,13 @@
 
 - (IBAction)gotoHomepage:(id)sender
 {
-    [[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://www.melown.com"]];
+    [[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://www.melown.com"] options:@{} completionHandler:nil];
+    
 }
 
 - (IBAction)gotoGithub:(id)sender
 {
-    [[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://github.com/Melown/vts-browser-cpp"]];
+    [[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://github.com/Melown/vts-browser-cpp"] options:@{} completionHandler:nil];
 }
 
 @end

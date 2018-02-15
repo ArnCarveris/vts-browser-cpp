@@ -32,7 +32,7 @@ namespace vts
 
 MapCreateOptions::MapCreateOptions() :
     clientId("undefined-vts-browser-cpp"),
-    searchUrlFallback("https://n1.windyty.com/search.php?format=json"
+    searchUrlFallback("https://eu-n1.windyty.com/search.php?format=json"
                        "&addressdetails=1&limit=20&q={value}"),
     searchSrsFallback("+proj=longlat +datum=WGS84 +nodefs"),
     disableCache(false),
@@ -91,7 +91,9 @@ MapOptions::MapOptions() :
     debugRenderTileBoxes(false),
     debugRenderObjectPosition(false),
     debugRenderTargetPosition(false),
-    debugRenderAltitudeShiftCorners(false)
+    debugRenderAltitudeShiftCorners(false),
+    debugRenderNoMeshes(false),
+    debugExtractRawResources(false)
 {}
 
 } // namespace vts
