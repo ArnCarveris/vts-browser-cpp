@@ -20,15 +20,11 @@ float atmSampleDensity(vec2 uv)
     ivec2 res = textureSize(texAtmDensity, 0);
     vec2 uvp = uv * vec2(res - 1);
     ivec2 iuv = ivec2(uvp); // upper-left texel fetch coordinates
-    vec4 s;
-    s.x = atmDecodeFloat(texelFetchOffset(texAtmDensity, iuv, 0, ivec2(0,0)));
-    s.y = atmDecodeFloat(texelFetchOffset(texAtmDensity, iuv, 0, ivec2(1,0)));
-    s.z = atmDecodeFloat(texelFetchOffset(texAtmDensity, iuv, 0, ivec2(0,1)));
-    s.w = atmDecodeFloat(texelFetchOffset(texAtmDensity, iuv, 0, ivec2(1,1)));
     vec2 f = fract(uvp); // interpolation factors
-    vec2 a = mix(s.xz, s.yw, f.x);
-    float b = mix(a.x, a.y, f.y);
-    return b * 5.0;
+    iuv.y += int(round(f.y));
+    float a = atmDecodeFloat(texelFetchOffset(texAtmDensity, iuv, 0, ivec2(0,0)));
+    float b = atmDecodeFloat(texelFetchOffset(texAtmDensity, iuv, 0, ivec2(1,0)));
+    return mix(a, b, f.x) * 5.0;
 }
 
 // fragVect is in world space (divided by major axis)

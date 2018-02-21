@@ -87,7 +87,7 @@ void atmosphereThreadEntry(MapCelestialBody body, int thrIdx)
 
         GpuTextureSpec spec;
         spec.width = 512;
-        spec.height = 512;
+        spec.height = 2048;
         spec.components = 4;
 
         std::string name;
