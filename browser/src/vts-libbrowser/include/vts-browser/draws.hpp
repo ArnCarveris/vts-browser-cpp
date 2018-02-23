@@ -44,10 +44,11 @@ public:
     std::shared_ptr<void> mesh;
     std::shared_ptr<void> texColor;
     std::shared_ptr<void> texMask;
-    float mvp[16];
+    float mv[16];
     float uvm[9];
     float color[4];
     float uvClip[4];
+    float center[3];
     bool externalUv;
     bool flatShading;
 
@@ -68,14 +69,16 @@ public:
     {
         double view[16];
         double proj[16];
-        //double target[3];
         double eye[3];
         double near, far;
+        double aspect;
+        double fov; // vertical, degrees
         bool mapProjected;
     } camera;
 
     MapDraws();
     void clear();
+    void sortOpaqueFrontToBack();
 };
 
 } // namespace vts

@@ -34,10 +34,7 @@
 
 #include "foundation.hpp"
 
-namespace vts
-{
-
-namespace renderer
+namespace vts { namespace renderer
 {
 
 class VTSR_API Shader
@@ -49,6 +46,8 @@ public:
     void bind();
     void load(const std::string &vertexShader,
               const std::string &fragmentShader);
+    void loadInternal(const std::string &vertexName,
+                      const std::string &fragmentName);
     void uniformMat4(uint32 location, const float *value);
     void uniformMat3(uint32 location, const float *value);
     void uniformVec4(uint32 location, const float *value);
@@ -62,7 +61,10 @@ public:
     uint32 getId() const;
 
     std::vector<uint32> uniformLocations;
-    
+    uint32 loadUniformLocations(const std::vector<const char *> &names);
+    void bindTextureLocations(
+        const std::vector<std::pair<const char *, uint32>> &binds);
+
     static std::string preamble;
 
 private:
@@ -77,6 +79,7 @@ public:
     void clear();
     void bind();
     void load(ResourceInfo &info, GpuTextureSpec &spec);
+    void load(GpuTextureSpec &spec);
     void generateMipmaps();
     void makeRepeat();
     uint32 getId() const;
@@ -96,6 +99,7 @@ public:
     void bind();
     void dispatch();
     void load(ResourceInfo &info, GpuMeshSpec &spec);
+    void load(GpuMeshSpec &spec);
     void load(uint32 vao, uint32 vbo, uint32 vio);
     uint32 getVao() const;
     uint32 getVbo() const;
@@ -106,6 +110,6 @@ private:
     uint32 vao, vbo, vio;
 };
 
-} } // namespace renderer
+} } // namespace vts::renderer
 
 #endif

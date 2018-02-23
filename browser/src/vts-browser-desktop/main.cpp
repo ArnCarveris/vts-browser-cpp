@@ -36,8 +36,6 @@
 #include "dataThread.hpp"
 #include "programOptions.hpp"
 
-void initializeDesktopData();
-
 int main(int argc, char *argv[])
 {
     // release build -> catch exceptions and print them to stderr
@@ -52,8 +50,6 @@ int main(int argc, char *argv[])
         //vts::setLogMask("D");
         //vts::setLogFile("vts-browser.log");
 
-        initializeDesktopData();
-
         vts::MapCreateOptions createOptions;
         createOptions.clientId = "vts-browser-desktop";
         //createOptions.disableCache = true;
@@ -62,8 +58,9 @@ int main(int argc, char *argv[])
         //mapOptions.debugExtractRawResources = true;
         vts::FetcherOptions fetcherOptions;
         AppOptions appOptions;
+        vts::renderer::RenderOptions renderOptions;
         if (!programOptions(createOptions, mapOptions, fetcherOptions,
-                            appOptions, argc, argv))
+                            renderOptions, appOptions, argc, argv))
             return 0;
 
         // this application uses separate thread for resource processing,
@@ -80,7 +77,7 @@ int main(int argc, char *argv[])
         {
             vts::Map map(createOptions);
             map.options() = mapOptions;
-            MainWindow main(&map, appOptions);
+            MainWindow main(&map, appOptions, renderOptions);
             DataThread data(&map, main.timingDataFrame,
                             main.window, main.dataContext,
                             fetcherOptions);

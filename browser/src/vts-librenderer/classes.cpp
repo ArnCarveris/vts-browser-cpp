@@ -24,14 +24,10 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <assert.h>
-
 #include "renderer.hpp"
 
 namespace vts { namespace renderer
 {
-
-using namespace priv;
 
 #ifdef VTSR_OPENGLES
 std::string Shader::preamble = "#version 300 es\n"
@@ -146,6 +142,14 @@ void Shader::load(const std::string &vertexShader,
     checkGl("load shader program");
 }
 
+void Shader::loadInternal(const std::string &vertexName,
+                  const std::string &fragmentName)
+{
+    Buffer vert = readInternalMemoryBuffer(vertexName);
+    Buffer frag = readInternalMemoryBuffer(fragmentName);
+    load(vert.str(), frag.str());
+}
+
 void Shader::uniformMat4(uint32 location, const float *value)
 {
     glUniformMatrix4fv(uniformLocations[location], 1, GL_FALSE, value);
@@ -199,6 +203,23 @@ void Shader::uniform(uint32 location, const int value)
 uint32 Shader::getId() const
 {
     return id;
+}
+
+uint32 Shader::loadUniformLocations(const std::vector<const char *> &names)
+{
+    bind();
+    uint32 res = uniformLocations.size();
+    for (auto &it : names)
+        uniformLocations.push_back(glGetUniformLocation(id, it));
+    return res;
+}
+
+void Shader::bindTextureLocations(
+    const std::vector<std::pair<const char *, uint32>> &binds)
+{
+    bind();
+    for (auto &it : binds)
+        glUniform1i(glGetUniformLocation(id, it.first), it.second);
 }
 
 Texture::Texture() :
@@ -310,13 +331,13 @@ void Texture::load(ResourceInfo &info, vts::GpuTextureSpec &spec)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    #ifndef VTSR_OPENGLES
+    //#ifndef VTSR_OPENGLES
     if (GLAD_GL_EXT_texture_filter_anisotropic)
     {
         glTexParameterf(GL_TEXTURE_2D,
                         GL_TEXTURE_MAX_ANISOTROPY_EXT, maxAnisotropySamples);
     }
-    #endif
+    //#endif
 
     grayscale = spec.components == 1;
 
@@ -324,6 +345,12 @@ void Texture::load(ResourceInfo &info, vts::GpuTextureSpec &spec)
     checkGl("load texture");
     info.ramMemoryCost += sizeof(*this);
     info.gpuMemoryCost += spec.buffer.size();
+}
+
+void Texture::load(vts::GpuTextureSpec &spec)
+{
+    ResourceInfo info;
+    load(info, spec);
 }
 
 void Texture::generateMipmaps()
@@ -438,6 +465,12 @@ void Mesh::load(ResourceInfo &info, GpuMeshSpec &specp)
     info.gpuMemoryCost += spec.vertices.size() + spec.indices.size();
     spec.vertices.free();
     spec.indices.free();
+}
+
+void Mesh::load(GpuMeshSpec &spec)
+{
+    ResourceInfo info;
+    load(info, spec);
 }
 
 void Mesh::load(uint32 vao, uint32 vbo, uint32 vio)

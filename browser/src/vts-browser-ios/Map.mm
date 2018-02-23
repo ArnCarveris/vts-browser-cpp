@@ -41,6 +41,18 @@
 using namespace vts;
 using namespace vts::renderer;
 
+void initializeIosData();
+namespace
+{
+    struct Initializer
+    {
+        Initializer()
+        {
+            initializeIosData();
+        }
+    } initializer;
+} // namespace
+
 ExtraConfig::ExtraConfig() :
     controlType(0), touchSize(45),
     showControlScales(true), showControlAreas(false), showControlCompas(false)
@@ -57,7 +69,7 @@ ExtraConfig::ExtraConfig() :
 void loadAppConfig();
 
 Map *map;
-RenderOptions renderOptions;
+Renderer render;
 ExtraConfig extraConfig; 
 
 namespace
@@ -118,11 +130,9 @@ void mapInitialize()
         [EAGLContext setCurrentContext:renderContext];
 
         loadGlFunctions(&iosGlGetProcAddress);
-        vts::renderer::initialize();
+        render.initialize();
+        render.bindLoadFunctions(map);
         map->renderInitialize();
-
-        map->callbacks().loadTexture = std::bind(&loadTexture, std::placeholders::_1, std::placeholders::_2);
-        map->callbacks().loadMesh = std::bind(&loadMesh, std::placeholders::_1, std::placeholders::_2);
 
         // load data for rendering scales
         {
@@ -148,7 +158,6 @@ void mapInitialize()
                 Buffer buff = readInternalMemoryBuffer("data/meshes/rect.obj");
                 ResourceInfo info;
                 GpuMeshSpec spec(buff);
-                spec.attributes.resize(2);
                 spec.attributes[0].enable = true;
                 spec.attributes[0].stride = sizeof(vec3f) + sizeof(vec2f);
                 spec.attributes[0].components = 3;
@@ -402,7 +411,7 @@ void mapRenderControls(float retinaScale, CGRect whole, CGRect pitch, CGRect yaw
         double posSize[3] = { (compas.origin.x + compas.size.width * 0.5) * retinaScale,
             (whole.size.height - (compas.origin.y + compas.size.height * 0.5)) * retinaScale,
             compas.size.width * retinaScale };
-        renderCompass(posSize, rotation);
+        render.renderCompass(posSize, rotation);
     }
 
     checkGl("rendered scale");

@@ -223,6 +223,7 @@ public:
         std::vector<TileId> nodesToPreload;
         mat4 viewProj;
         mat4 viewProjRender;
+        mat4 viewRender;
         std::array<vec4, 6> frustumPlanes;
         vec3 perpendicularUnitVector;
         vec3 forwardUnitVector;

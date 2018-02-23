@@ -24,249 +24,16 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <assert.h>
-#include <atomic>
-#include <thread>
-#include <mutex>
-#include <iomanip>
-#include <sstream>
-
-#include <vts-browser/buffer.hpp>
-#include <vts-browser/math.hpp>
-
 #include "renderer.hpp"
+
+#include <vts-browser/map.hpp>
+#include <vts-browser/options.hpp>
 
 namespace vts { namespace renderer
 {
 
-namespace priv
-{
-
-int maxAntialiasingSamples = 1;
-float maxAnisotropySamples = 0.f;
-
-} // namespace priv
-
-using namespace priv;
-
 namespace
 {
-
-std::shared_ptr<Texture> texCompas;
-std::shared_ptr<Shader> shaderTexture;
-std::shared_ptr<Shader> shaderSurface;
-std::shared_ptr<Shader> shaderInfographic;
-std::shared_ptr<Shader> shaderAtmosphere;
-std::shared_ptr<Shader> shaderCopyDepth;
-std::shared_ptr<Mesh> meshQuad; // positions: -1 .. 1
-std::shared_ptr<Mesh> meshRect; // positions: 0 .. 1
-
-void atmosphereThreadEntry(vts::MapCelestialBody body, int thrIdx);
-
-bool areSame(const vts::MapCelestialBody &a, const vts::MapCelestialBody &b)
-{
-    return a.majorRadius == b.majorRadius
-        && a.minorRadius == b.minorRadius
-        && a.atmosphere.thickness == b.atmosphere.thickness
-        && a.atmosphere.horizontalExponent == b.atmosphere.horizontalExponent
-        && a.atmosphere.verticalExponent == b.atmosphere.verticalExponent;
-}
-
-struct AtmosphereProp
-{
-    GpuTextureSpec spec;
-    std::shared_ptr<Texture> tex;
-    vts::MapCelestialBody body;
-    std::mutex mut;
-    std::atomic<int> state; // 0 = uninitialized, 1 = computing, 2 = generated, 3 = done
-    std::atomic<int> thrIdx;
-
-    AtmosphereProp() : state(0), thrIdx(0)
-    {}
-
-    bool validate(const vts::MapCelestialBody &current)
-    {
-        if (!areSame(current, body) || state == 0)
-        {
-            std::lock_guard<std::mutex> lck(mut);
-            thrIdx++;
-            state = 1;
-            body = current;
-            std::thread thr(&atmosphereThreadEntry, body, (int)thrIdx);
-            thr.detach();
-        }
-        if (state == 2)
-        {
-            std::lock_guard<std::mutex> lck(mut);
-            tex = std::make_shared<Texture>();
-            vts::ResourceInfo info;
-            tex->load(info, spec);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            spec.buffer.free();
-            state = 3;
-        }
-        return state == 3;
-    }
-} atmosphere;
-
-void encodeFloat(double v, unsigned char *target)
-{
-    assert(v >= 0 && v < 1);
-    vec4 enc = vec4(1.0, 256.0, 256.0*256.0, 256.0*256.0*256.0) * v;
-    for (int i = 0; i < 4; i++)
-        enc[i] -= std::floor(enc[i]); // frac
-    vec4 tmp;
-    for (int i = 0; i < 3; i++)
-        tmp[i] = enc[i + 1] / 256.0; // shift
-    tmp[3] = 0;
-    enc -= tmp; // subtract
-    for (int i = 0; i < 4; i++)
-        target[i] = enc[i] * 256.0;
-}
-
-double sqr(double a)
-{
-    return a * a;
-}
-
-void atmosphereThreadEntry(MapCelestialBody body, int thrIdx)
-{
-    try
-    {
-        vts::setLogThreadName("atmosphere");
-        vts::log(vts::LogLevel::info2, "Loading atmosphere density texture");
-
-        double atmHeight = body.atmosphere.thickness / body.majorRadius;
-        double atmRad = 1 + atmHeight;
-        double atmRad2 = sqr(atmRad);
-
-        GpuTextureSpec spec;
-        spec.width = 512;
-        spec.height = 512;
-        spec.components = 4;
-
-        std::string name;
-        {
-            std::stringstream ss;
-            ss << std::setprecision(7) << std::fixed
-               << "density-" << spec.width << "-" << spec.height << "-"
-               << atmRad << "-" << body.atmosphere.verticalExponent << ".png";
-            name = ss.str();
-        }
-
-        // try to load the texture from internal memory
-        std::string fullName = std::string("data/textures/atmosphere/") + name;
-        if (detail::existsInternalMemoryBuffer(fullName))
-        {
-            vts::log(vts::LogLevel::info2, "The atmosphere texture will "
-                     "be loaded from internal memory");
-            try
-            {
-                GpuTextureSpec sp(readInternalMemoryBuffer(fullName));
-                if (spec.expectedSize() == sp.buffer.size())
-                    std::swap(sp, spec);
-            }
-            catch (...)
-            {
-                // dont care
-            }
-        }
-
-        // generate the texture anew
-        if (spec.buffer.size() == 0)
-        {
-            vts::log(vts::LogLevel::info3,
-                     "The atmosphere density texture will be generated anew");
-            spec.buffer.allocate(spec.width * spec.height * 4);
-            unsigned char *valsArray = (unsigned char*)spec.buffer.data();
-
-            // actually generate the texture content
-            for (uint32 xx = 0; xx < spec.width; xx++)
-            {
-                std::stringstream ss;
-                ss << "Atmosphere progress: " << xx << " / " << spec.width;
-                vts::log(vts::LogLevel::info1, ss.str());
-
-                double cosfi = 2 * xx / (double)spec.width - 1;
-                double fi = std::acos(cosfi);
-                double sinfi = std::sin(fi);
-
-                for (uint32 yy = 0; yy < spec.height; yy++)
-                {
-                    double yyy = yy / (double)spec.height;
-                    double r = 2 * atmHeight * yyy - atmHeight + 1;
-                    double t0 = cosfi * r;
-                    double y = sinfi * r;
-                    double y2 = sqr(y);
-                    double a = sqrt(atmRad2 - y2);
-                    double density = 0;
-                    static const double step = 0.0003;
-                    for (double t = t0; t < a; t += step)
-                    {
-                        double h = std::sqrt(sqr(t) + y2);
-                        h = (clamp(h, 1, atmRad) - 1) / atmHeight;
-                        double a = std::exp(h
-                            * -body.atmosphere.verticalExponent);
-                        density += a;
-                    }
-                    density *= step;
-                    encodeFloat(density * 0.2,
-                                valsArray + ((yy * spec.width + xx) * 4));
-                }
-            }
-
-            // save the texture to file
-            {
-                vts::log(vts::LogLevel::info3,
-                         std::string() + "The atmosphere texture "
-                         "will be saved to file <" + name + ">");
-                try
-                {
-                    Buffer b = spec.encodePng();
-                    writeLocalFileBuffer(name, b);
-                }
-                catch (...)
-                {
-                    // dont care
-                }
-            }
-        }
-
-        // pass the texture to the main thread
-        {
-            std::lock_guard<std::mutex> lck(atmosphere.mut);
-            if (atmosphere.thrIdx == thrIdx)
-            {
-                atmosphere.spec = std::move(spec);
-                atmosphere.state = 2;
-            }
-        }
-
-        vts::log(vts::LogLevel::info2, "Finished atmosphere density texture");
-    }
-    catch (const std::exception &e)
-    {
-        vts::log(LogLevel::err3, e.what());
-    }
-    catch (...)
-    {
-        vts::log(LogLevel::err4, "Unknown exception in atmosphere "
-                                 "density texture thread");
-    }
-}
-
-RenderVariables vars;
-
-int widthPrev;
-int heightPrev;
-int antialiasingPrev;
-
-mat4 view;
-mat4 proj;
-mat4 viewProj;
 
 void clearGlState()
 {
@@ -287,47 +54,65 @@ void clearGlState()
     checkGl("cleared gl state");
 }
 
-class Renderer
+class ShaderAtm : public Shader
 {
 public:
-    const RenderOptions &options;
-    const MapDraws &draws;
-    const MapCelestialBody &body;
+    ShaderAtm() : firstAtmUniLoc(-1)
+    {}
 
-    Renderer(const RenderOptions &options,
-             const MapDraws &draws,
-             const MapCelestialBody &body) :
-        options(options), draws(draws), body(body)
+    void initializeAtmosphere()
     {
-        assert(shaderSurface);
-
-        view = rawToMat4(draws.camera.view);
-        proj = rawToMat4(draws.camera.proj);
-        viewProj = proj * view;
+        firstAtmUniLoc = loadUniformLocations({
+            "uniAtmColorLow", "uniAtmColorHigh", "uniAtmParams",
+            "uniAtmCameraPosition", "uniAtmViewInv"});
+        bindTextureLocations({{"texAtmDensity", 4}});
     }
+
+    uint32 firstAtmUniLoc;
+};
+
+} // namespace
+
+class RendererImpl
+{
+public:
+    RenderVariables vars;
+    RenderOptions options;
+    AtmosphereDensity atmosphere;
+
+    std::shared_ptr<Texture> texCompas;
+    std::shared_ptr<Shader> shaderTexture;
+    std::shared_ptr<ShaderAtm> shaderSurface;
+    std::shared_ptr<ShaderAtm> shaderBackground;
+    std::shared_ptr<Shader> shaderInfographic;
+    std::shared_ptr<Shader> shaderCopyDepth;
+    std::shared_ptr<Mesh> meshQuad; // positions: -1 .. 1
+    std::shared_ptr<Mesh> meshRect; // positions: 0 .. 1
+
+    const MapDraws *draws;
+    const MapCelestialBody *body;
+
+    mat4 view;
+    mat4 proj;
+    mat4 viewProj;
+
+    uint32 widthPrev;
+    uint32 heightPrev;
+    uint32 antialiasingPrev;
+
+    RendererImpl() : draws(nullptr), body(nullptr),
+        widthPrev(0), heightPrev(0), antialiasingPrev(0)
+    {}
+
+    ~RendererImpl()
+    {}
 
     void drawSurface(const DrawTask &t)
     {
         Texture *tex = (Texture*)t.texColor.get();
         Mesh *m = (Mesh*)t.mesh.get();
         shaderSurface->bind();
-        /*
-        if (grid)
-        {
-            static const float scale = 1.1;
-            mat4f mvp = rawToMat4(t.mvp)
-                    * scaleMatrix(scale).cast<float>();
-            mat3f uvm = rawToMat3(t.uvm)
-                    * mat4to3(scaleMatrix(scale)).cast<float>();
-            shaderSurface->uniformMat4(0, mvp.data());
-            shaderSurface->uniformMat3(2, uvm.data());
-            float uvclip[4];
-            for (int i = 0; i < 4; i++)
-                uvclip[i] = t.uvClip[i] * scale;
-            shaderSurface->uniformVec4(4, uvclip);
-        }
-        */
-        shaderSurface->uniformMat4(0, t.mvp);
+        shaderSurface->uniformMat4(1, t.mv);
         shaderSurface->uniformMat3(2, t.uvm);
         shaderSurface->uniformVec4(4, t.uvClip);
         shaderSurface->uniformVec4(3, t.color);
@@ -338,12 +123,6 @@ public:
             t.externalUv ? 1 : -1
         };
         shaderSurface->uniformVec4(5, flags);
-        if (t.flatShading)
-        {
-            mat4f mv = mat4f(t.mvp);
-            mv = proj.inverse().cast<float>() * mv;
-            shaderSurface->uniformMat4(1, (float*)mv.data());
-        }
         if (t.texMask)
         {
             glActiveTexture(GL_TEXTURE0 + 1);
@@ -358,9 +137,9 @@ public:
     void drawInfographic(const DrawTask &t)
     {
         shaderInfographic->bind();
-        shaderInfographic->uniformMat4(0, t.mvp);
-        shaderInfographic->uniformVec4(1, t.color);
-        shaderInfographic->uniform(2, (int)(!!t.texColor));
+        shaderInfographic->uniformMat4(1, t.mv);
+        shaderInfographic->uniformVec4(2, t.color);
+        shaderInfographic->uniform(3, (int)(!!t.texColor));
         if (t.texColor)
         {
             Texture *tex = (Texture*)t.texColor.get();
@@ -371,72 +150,14 @@ public:
         m->dispatch();
     }
 
-    void renderAtmosphere()
-    {
-        if (!atmosphere.validate(body))
-            return;
-
-        // uniParams
-        sint32 uniParamsI[4] = {
-            draws.camera.mapProjected,
-            options.antialiasingSamples
-        };
-        float uniParamsF[4] = {
-            (float)(body.atmosphere.thickness / body.majorRadius),
-            (float)body.atmosphere.horizontalExponent,
-            (float)(body.minorRadius / body.majorRadius)
-        };
-        double n = draws.camera.near / body.majorRadius;
-        double f = draws.camera.far / body.majorRadius;
-        float uniNearFar[4] = {
-            (float)n,
-            (float)f,
-            (float(f / (f - n))),
-            (float(f * n / (n - f)))
-        };
-
-        // other
-        vec3 camPos = rawToVec3(draws.camera.eye) / body.majorRadius;
-        vec3f uniCameraPosition = camPos.cast<float>();
-        mat4 invViewProj = (viewProj * scaleMatrix(body.majorRadius)).inverse();
-
-        // corner directions
-        vec4 cornerDirsD[4] = {
-            invViewProj * vec4(-1, -1, 0, 1),
-            invViewProj * vec4(+1, -1, 0, 1),
-            invViewProj * vec4(-1, +1, 0, 1),
-            invViewProj * vec4(+1, +1, 0, 1)
-        };
-        vec3f cornerDirs[4];
-        for (uint32 i = 0; i < 4; i++)
-            cornerDirs[i] = normalize(vec4to3(cornerDirsD[i], true)
-                             - camPos).cast<float>();
-
-        // upload shader uniforms
-        shaderAtmosphere->bind();
-        shaderAtmosphere->uniformVec4(0, body.atmosphere.colorLow);
-        shaderAtmosphere->uniformVec4(1, body.atmosphere.colorHigh);
-        shaderAtmosphere->uniformVec4(2, uniParamsI);
-        shaderAtmosphere->uniformVec4(3, uniParamsF);
-        shaderAtmosphere->uniformVec4(4, uniNearFar);
-        shaderAtmosphere->uniformVec3(5, (float*)uniCameraPosition.data());
-        for (int i = 0; i < 4; i++)
-            shaderAtmosphere->uniformVec3(6 + i, (float*)cornerDirs[i].data());
-
-        // bind atmosphere density texture
-        glActiveTexture(GL_TEXTURE4);
-        atmosphere.tex->bind();
-        glActiveTexture(GL_TEXTURE0);
-
-        // dispatch
-        meshQuad->bind();
-        meshQuad->dispatch();
-        checkGl("rendered atmosphere");
-    }
-
     void render()
     {
         checkGl("pre-frame check");
+
+        assert(shaderSurface);
+        view = rawToMat4(draws->camera.view);
+        proj = rawToMat4(draws->camera.proj);
+        viewProj = proj * view;
 
         if (options.width <= 0 || options.height <= 0)
             return;
@@ -448,7 +169,7 @@ public:
             widthPrev = options.width;
             heightPrev = options.height;
             antialiasingPrev = std::max(std::min(options.antialiasingSamples,
-                             maxAntialiasingSamples), 1);
+                             maxAntialiasingSamples), 1u);
 
             vars.textureTargetType
                     = antialiasingPrev > 1 ? GL_TEXTURE_2D_MULTISAMPLE
@@ -577,21 +298,48 @@ public:
         glEnable(GL_DEPTH_TEST);
         glClearColor(0, 0, 0, 1);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glDepthFunc(GL_LEQUAL);
         checkGl("initialized opengl");
 
+        // update shaders
+        mat4f projf = rawToMat4(draws->camera.proj).cast<float>();
+        shaderInfographic->bind();
+        shaderInfographic->uniformMat4(0, projf.data());
+        shaderUpdateAtmosphere(shaderSurface.get());
+        shaderSurface->uniformMat4(0, projf.data());
+
         // render grids
-        //glEnable(GL_POLYGON_OFFSET_FILL);
-        //glPolygonOffset(0, +1000);
-        for (const DrawTask &t : draws.grids)
+        for (const DrawTask &t : draws->grids)
             drawSurface(t);
-        //glPolygonOffset(0, 0);
-        //glDisable(GL_POLYGON_OFFSET_FILL);
         checkGl("rendered grids");
 
         // render opaque
-        for (const DrawTask &t : draws.opaque)
+        for (const DrawTask &t : draws->opaque)
             drawSurface(t);
         checkGl("rendered opaque");
+
+        // render background (atmosphere)
+        {
+            // corner directions
+            vec3 camPos = rawToVec3(draws->camera.eye) / body->majorRadius;
+            mat4 inv = (viewProj * scaleMatrix(body->majorRadius)).inverse();
+            vec4 cornerDirsD[4] = {
+                inv * vec4(-1, -1, 0, 1),
+                inv * vec4(+1, -1, 0, 1),
+                inv * vec4(-1, +1, 0, 1),
+                inv * vec4(+1, +1, 0, 1)
+            };
+            vec3f cornerDirs[4];
+            for (uint32 i = 0; i < 4; i++)
+                cornerDirs[i] = normalize(vec4to3(cornerDirsD[i], true)
+                                 - camPos).cast<float>();
+
+            shaderUpdateAtmosphere(shaderBackground.get());
+            for (uint32 i = 0; i < 4; i++)
+                shaderBackground->uniformVec3(i, cornerDirs[i].data());
+            meshQuad->bind();
+            meshQuad->dispatch();
+        }
 
         // render polygon edges
         if (options.renderPolygonEdges)
@@ -603,7 +351,7 @@ public:
 #endif
             glPolygonOffset(0, -1000);
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-            for (const DrawTask &it : draws.opaque)
+            for (const DrawTask &it : draws->opaque)
             {
                 DrawTask t(it);
                 t.flatShading = false;
@@ -624,7 +372,7 @@ public:
         glDepthFunc(GL_LEQUAL);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        for (const DrawTask &t : draws.transparent)
+        for (const DrawTask &t : draws->transparent)
             drawSurface(t);
         checkGl("rendered transparent");
 
@@ -641,13 +389,8 @@ public:
         }
         glDisable(GL_DEPTH_TEST);
 
-        // render atmosphere
-        if (options.renderAtmosphere
-                && body.majorRadius > 0 && body.atmosphere.thickness > 0)
-            renderAtmosphere();
-
         // render infographics
-        for (const DrawTask &t : draws.Infographic)
+        for (const DrawTask &t : draws->Infographic)
             drawInfographic(t);
         checkGl("rendered infographics");
 
@@ -679,223 +422,297 @@ public:
         // clear the state
         clearGlState();
     }
+
+    void initialize()
+    {
+        // load texture compas
+        {
+            texCompas = std::make_shared<Texture>();
+            vts::GpuTextureSpec spec(vts::readInternalMemoryBuffer(
+                                      "data/textures/compas.png"));
+            spec.verticalFlip();
+            texCompas->load(spec);
+            texCompas->generateMipmaps();
+        }
+
+        // load shader texture
+        {
+            shaderTexture = std::make_shared<Shader>();
+            shaderTexture->loadInternal(
+                        "data/shaders/texture.vert.glsl",
+                        "data/shaders/texture.frag.glsl");
+            shaderTexture->loadUniformLocations({"uniMvp", "uniUvm"});
+            shaderTexture->bindTextureLocations({{"uniTexture", 0}});
+        }
+
+        // load shader surface
+        {
+            shaderSurface = std::make_shared<ShaderAtm>();
+            Buffer vert = readInternalMemoryBuffer(
+                        "data/shaders/surface.vert.glsl");
+            Buffer atm = readInternalMemoryBuffer(
+                        "data/shaders/atmosphere.inc.glsl");
+            Buffer frag = readInternalMemoryBuffer(
+                        "data/shaders/surface.frag.glsl");
+            shaderSurface->load(vert.str(), atm.str() + frag.str());
+            shaderSurface->loadUniformLocations({ "uniP", "uniMv", "uniUvMat",
+                "uniColor", "uniUvClip", "uniFlags" });
+            shaderSurface->bindTextureLocations({{"texColor", 0}, {"texMask", 1}});
+            shaderSurface->initializeAtmosphere();
+        }
+
+        // load shader background
+        {
+            shaderBackground = std::make_shared<ShaderAtm>();
+            Buffer vert = readInternalMemoryBuffer(
+                        "data/shaders/background.vert.glsl");
+            Buffer atm = readInternalMemoryBuffer(
+                        "data/shaders/atmosphere.inc.glsl");
+            Buffer frag = readInternalMemoryBuffer(
+                        "data/shaders/background.frag.glsl");
+            shaderBackground->load(vert.str(), atm.str() + frag.str());
+            shaderBackground->loadUniformLocations({"uniCorners[0]",
+                "uniCorners[1]","uniCorners[2]","uniCorners[3]"});
+            shaderBackground->initializeAtmosphere();
+        }
+
+        // load shader infographic
+        {
+            shaderInfographic = std::make_shared<Shader>();
+            shaderInfographic->loadInternal(
+                        "data/shaders/infographic.vert.glsl",
+                        "data/shaders/infographic.frag.glsl");
+            shaderInfographic->loadUniformLocations({"uniP", "uniMv", "uniColor",
+                                                     "uniUseColorTexture"});
+            shaderInfographic->bindTextureLocations({{"texColor", 0},
+                                                     {"texDepth", 6}});
+        }
+
+        // load shader copy depth
+        {
+            shaderCopyDepth = std::make_shared<Shader>();
+            shaderCopyDepth->loadInternal(
+                        "data/shaders/copyDepth.vert.glsl",
+                        "data/shaders/copyDepth.frag.glsl");
+            shaderCopyDepth->loadUniformLocations({"uniTexPos"});
+            shaderCopyDepth->bindTextureLocations({{"texDepth", 0}});
+        }
+
+        // load mesh quad
+        {
+            meshQuad = std::make_shared<Mesh>();
+            vts::GpuMeshSpec spec(vts::readInternalMemoryBuffer(
+                                      "data/meshes/quad.obj"));
+            assert(spec.faceMode == vts::GpuMeshSpec::FaceMode::Triangles);
+            spec.attributes[0].enable = true;
+            spec.attributes[0].stride = sizeof(vts::vec3f) + sizeof(vts::vec2f);
+            spec.attributes[0].components = 3;
+            spec.attributes[1].enable = true;
+            spec.attributes[1].stride = sizeof(vts::vec3f) + sizeof(vts::vec2f);
+            spec.attributes[1].components = 2;
+            spec.attributes[1].offset = sizeof(vts::vec3f);
+            meshQuad->load(spec);
+        }
+
+        // load mesh rect
+        {
+            meshRect = std::make_shared<Mesh>();
+            vts::GpuMeshSpec spec(vts::readInternalMemoryBuffer(
+                                      "data/meshes/rect.obj"));
+            assert(spec.faceMode == vts::GpuMeshSpec::FaceMode::Triangles);
+            spec.attributes[0].enable = true;
+            spec.attributes[0].stride = sizeof(vts::vec3f) + sizeof(vts::vec2f);
+            spec.attributes[0].components = 3;
+            spec.attributes[1].enable = true;
+            spec.attributes[1].stride = sizeof(vts::vec3f) + sizeof(vts::vec2f);
+            spec.attributes[1].components = 2;
+            spec.attributes[1].offset = sizeof(vts::vec3f);
+            meshRect->load(spec);
+        }
+
+        atmosphere.initialize();
+    }
+
+    void finalize()
+    {
+        texCompas.reset();
+        shaderTexture.reset();
+        shaderSurface.reset();
+        shaderBackground.reset();
+        shaderInfographic.reset();
+        shaderCopyDepth.reset();
+        meshQuad.reset();
+        meshRect.reset();
+
+        atmosphere.finalize();
+
+        if (vars.frameRenderBufferId)
+        {
+            glDeleteFramebuffers(1, &vars.frameRenderBufferId);
+            vars.frameRenderBufferId = 0;
+        }
+
+        if (vars.frameReadBufferId)
+        {
+            glDeleteFramebuffers(1, &vars.frameReadBufferId);
+            vars.frameReadBufferId = 0;
+        }
+
+        if (vars.depthRenderTexId)
+        {
+            glDeleteTextures(1, &vars.depthRenderTexId);
+            vars.depthRenderTexId = 0;
+        }
+
+        if (vars.depthReadTexId)
+        {
+            glDeleteTextures(1, &vars.depthReadTexId);
+            vars.depthReadTexId = 0;
+        }
+
+        if (vars.colorRenderTexId)
+        {
+            glDeleteTextures(1, &vars.colorRenderTexId);
+            vars.colorRenderTexId = 0;
+        }
+
+        widthPrev = heightPrev = antialiasingPrev = 0;
+    }
+
+    void shaderUpdateAtmosphere(ShaderAtm *shader)
+    {
+        shader->bind();
+        float p[4] = {0,0,0,0};
+        shader->uniformVec4(shader->firstAtmUniLoc + 2, p);
+
+        if (!options.renderAtmosphere)
+            return;
+
+        Texture *tex = atmosphere.validate(*body);
+        if (!tex)
+            return;
+
+        // uniParams
+        float uniAtmParams[4] = {
+            (float)(body->atmosphere.thickness / body->majorRadius),
+            (float)body->atmosphere.horizontalExponent,
+            (float)(body->minorRadius / body->majorRadius),
+            (float)body->majorRadius        };
+
+        // camera position
+        vec3 camPos = rawToVec3(draws->camera.eye) / body->majorRadius;
+        vec3f uniAtmCameraPosition = camPos.cast<float>();
+
+        // view inv
+        mat4 vi = rawToMat4(draws->camera.view).inverse();
+        mat4f uniAtmViewInv = vi.cast<float>();
+
+        // upload shader uniforms
+        uint32 loc = shader->firstAtmUniLoc;
+        shader->uniformVec4(loc + 0, body->atmosphere.colorLow);
+        shader->uniformVec4(loc + 1, body->atmosphere.colorHigh);
+        shader->uniformVec4(loc + 2, uniAtmParams);
+        shader->uniformVec3(loc + 3, (float*)uniAtmCameraPosition.data());
+        shader->uniformMat4(loc + 4, (float*)uniAtmViewInv.data());
+
+        // bind atmosphere density texture
+        glActiveTexture(GL_TEXTURE4);
+        tex->bind();
+        glActiveTexture(GL_TEXTURE0);
+    }
+
+    void renderCompass(const double screenPosSize[3],
+                       const double mapRotation[3])
+    {
+        glEnable(GL_BLEND);
+        glActiveTexture(GL_TEXTURE0);
+        texCompas->bind();
+        shaderTexture->bind();
+        mat4 p = orthographicMatrix(-1, 1, -1, 1, -1, 1)
+                * scaleMatrix(1.0 / widthPrev, 1.0 / heightPrev, 1);
+        mat4 v = translationMatrix(screenPosSize[0] * 2 - widthPrev,
+                                    screenPosSize[1] * 2 - heightPrev, 0)
+                * scaleMatrix(screenPosSize[2], screenPosSize[2], 1);
+        mat4 m = rotationMatrix(0, mapRotation[1] + 90)
+             * rotationMatrix(2, mapRotation[0]);
+        mat4f mvpf = (p * v * m).cast<float>();
+        mat3f uvmf = identityMatrix3().cast<float>();
+        shaderTexture->uniformMat4(0, mvpf.data());
+        shaderTexture->uniformMat3(1, uvmf.data());
+        meshQuad->bind();
+        meshQuad->dispatch();
+    }
+
+    void getWorldPosition(const double screenPos[2], double worldPos[3])
+    {
+        double x = screenPos[0];
+        double y = screenPos[1];
+        y = heightPrev - y - 1;
+
+        float depth = std::numeric_limits<float>::quiet_NaN();
+        #ifdef VTSR_OPENGLES
+        // opengl ES does not support reading depth with glReadPixels
+        {
+            clearGlState();
+            uint32 fbId = 0, texId = 0;
+
+            glGenTextures(1, &texId);
+            glBindTexture(GL_TEXTURE_2D, texId);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0,
+                         GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
+            glGenFramebuffers(1, &fbId);
+            glBindFramebuffer(GL_FRAMEBUFFER, fbId);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                   GL_TEXTURE_2D, texId, 0);
+            checkGlFramebuffer();
+
+            shaderCopyDepth->bind();
+            int pos[2] = { (int)x, (int)y };
+            shaderCopyDepth->uniformVec2(0, pos);
+            glBindTexture(GL_TEXTURE_2D, vars.depthReadTexId);
+            meshQuad->bind();
+            meshQuad->dispatch();
+
+            unsigned char res[4];
+            glReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, res);
+            if (res[0] != 0 || res[1] != 0 || res[2] != 0 || res[3] != 0)
+            {
+                static const vec4 bitSh = vec4(1.0 / (256.0*256.0*256.0),
+                                               1.0 / (256.0*256.0),
+                                               1.0 / 256.0, 1.0);
+                depth = 0;
+                for (int i = 0; i < 4; i++)
+                    depth += res[i] * bitSh[i];
+                depth /= 255;
+            }
+
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glDeleteFramebuffers(1, &fbId);
+            glDeleteTextures(1, &texId);
+        }
+        #else
+        {
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, vars.frameReadBufferId);
+            glReadPixels((int)x, (int)y, 1, 1,
+                     GL_DEPTH_COMPONENT, GL_FLOAT, &depth);
+        }
+        #endif
+        checkGl("read depth");
+        clearGlState();
+
+        if (depth > 1 - 1e-7)
+            depth = std::numeric_limits<float>::quiet_NaN();
+        depth = depth * 2 - 1;
+        x = x / widthPrev * 2 - 1;
+        y = y / heightPrev * 2 - 1;
+        vec3 res = vec4to3(viewProj.inverse() * vec4(x, y, depth, 1), true);
+        for (int i = 0; i < 3; i++)
+            worldPos[i] = res[i];
+    }
 };
-
-} // namespace
-
-void initialize()
-{
-    vts::log(vts::LogLevel::info3, "Initializing vts renderer library");
-
-    // load texture compas
-    {
-        texCompas = std::make_shared<Texture>();
-        vts::GpuTextureSpec spec(vts::readInternalMemoryBuffer(
-                                  "data/textures/compas.png"));
-        spec.verticalFlip();
-        vts::ResourceInfo info;
-        texCompas->load(info, spec);
-        texCompas->generateMipmaps();
-    }
-
-    // load shader texture
-    {
-        shaderTexture = std::make_shared<Shader>();
-        Buffer vert = readInternalMemoryBuffer(
-                    "data/shaders/texture.vert.glsl");
-        Buffer frag = readInternalMemoryBuffer(
-                    "data/shaders/texture.frag.glsl");
-        shaderTexture->load(
-            std::string(vert.data(), vert.size()),
-            std::string(frag.data(), frag.size()));
-        std::vector<uint32> &uls = shaderTexture->uniformLocations;
-        GLuint id = shaderTexture->getId();
-        uls.push_back(glGetUniformLocation(id, "uniMvp"));
-        uls.push_back(glGetUniformLocation(id, "uniUvm"));
-        glUseProgram(id);
-        glUniform1i(glGetUniformLocation(id, "uniTexture"), 0);
-        glUseProgram(0);
-    }
-
-    // load shader surface
-    {
-        shaderSurface = std::make_shared<Shader>();
-        Buffer vert = readInternalMemoryBuffer(
-                    "data/shaders/surface.vert.glsl");
-        Buffer frag = readInternalMemoryBuffer(
-                    "data/shaders/surface.frag.glsl");
-        shaderSurface->load(
-            std::string(vert.data(), vert.size()),
-            std::string(frag.data(), frag.size()));
-        std::vector<uint32> &uls = shaderSurface->uniformLocations;
-        GLuint id = shaderSurface->getId();
-        uls.push_back(glGetUniformLocation(id, "uniMvp"));
-        uls.push_back(glGetUniformLocation(id, "uniMv"));
-        uls.push_back(glGetUniformLocation(id, "uniUvMat"));
-        uls.push_back(glGetUniformLocation(id, "uniColor"));
-        uls.push_back(glGetUniformLocation(id, "uniUvClip"));
-        uls.push_back(glGetUniformLocation(id, "uniFlags"));
-        glUseProgram(id);
-        glUniform1i(glGetUniformLocation(id, "texColor"), 0);
-        glUniform1i(glGetUniformLocation(id, "texMask"), 1);
-        glUseProgram(0);
-    }
-
-    // load shader infographic
-    {
-        shaderInfographic = std::make_shared<Shader>();
-        Buffer vert = readInternalMemoryBuffer(
-                    "data/shaders/infographic.vert.glsl");
-        Buffer frag = readInternalMemoryBuffer(
-                    "data/shaders/infographic.frag.glsl");
-        shaderInfographic->load(
-            std::string(vert.data(), vert.size()),
-            std::string(frag.data(), frag.size()));
-        std::vector<uint32> &uls = shaderInfographic->uniformLocations;
-        GLuint id = shaderInfographic->getId();
-        uls.push_back(glGetUniformLocation(id, "uniMvp"));
-        uls.push_back(glGetUniformLocation(id, "uniColor"));
-        uls.push_back(glGetUniformLocation(id, "uniUseColorTexture"));
-        glUseProgram(id);
-        glUniform1i(glGetUniformLocation(id, "texColor"), 0);
-        glUniform1i(glGetUniformLocation(id, "texDepth"), 6);
-        glUseProgram(0);
-    }
-
-    // load shader atmosphere
-    {
-        shaderAtmosphere = std::make_shared<Shader>();
-        Buffer vert = readInternalMemoryBuffer(
-                    "data/shaders/atmosphere.vert.glsl");
-        Buffer frag = readInternalMemoryBuffer(
-                    "data/shaders/atmosphere.frag.glsl");
-        shaderAtmosphere->load(
-            std::string(vert.data(), vert.size()),
-            std::string(frag.data(), frag.size()));
-        std::vector<uint32> &uls = shaderAtmosphere->uniformLocations;
-        GLuint id = shaderAtmosphere->getId();
-        uls.push_back(glGetUniformLocation(id, "uniAtmColorLow"));
-        uls.push_back(glGetUniformLocation(id, "uniAtmColorHigh"));
-        uls.push_back(glGetUniformLocation(id, "uniParamsI"));
-        uls.push_back(glGetUniformLocation(id, "uniParamsF"));
-        uls.push_back(glGetUniformLocation(id, "uniNearFar"));
-        uls.push_back(glGetUniformLocation(id, "uniCameraPosition"));
-        uls.push_back(glGetUniformLocation(id, "uniCornerDirs[0]"));
-        uls.push_back(glGetUniformLocation(id, "uniCornerDirs[1]"));
-        uls.push_back(glGetUniformLocation(id, "uniCornerDirs[2]"));
-        uls.push_back(glGetUniformLocation(id, "uniCornerDirs[3]"));
-        glUseProgram(id);
-        glUniform1i(glGetUniformLocation(id, "texDepthSingle"), 6);
-        glUniform1i(glGetUniformLocation(id, "texDepthMulti"), 5);
-        glUniform1i(glGetUniformLocation(id, "texDensity"), 4);
-        glUseProgram(0);
-    }
-
-    // load shader copy depth
-    {
-        shaderCopyDepth = std::make_shared<Shader>();
-        Buffer vert = readInternalMemoryBuffer(
-                    "data/shaders/copyDepth.vert.glsl");
-        Buffer frag = readInternalMemoryBuffer(
-                    "data/shaders/copyDepth.frag.glsl");
-        shaderCopyDepth->load(
-            std::string(vert.data(), vert.size()),
-            std::string(frag.data(), frag.size()));
-        std::vector<uint32> &uls = shaderCopyDepth->uniformLocations;
-        GLuint id = shaderCopyDepth->getId();
-        uls.push_back(glGetUniformLocation(id, "uniTexPos"));
-        glUseProgram(id);
-        glUniform1i(glGetUniformLocation(id, "texDepth"), 0);
-        glUseProgram(0);
-    }
-
-    // load mesh quad
-    {
-        meshQuad = std::make_shared<Mesh>();
-        vts::GpuMeshSpec spec(vts::readInternalMemoryBuffer(
-                                  "data/meshes/quad.obj"));
-        assert(spec.faceMode == vts::GpuMeshSpec::FaceMode::Triangles);
-        spec.attributes.resize(2);
-        spec.attributes[0].enable = true;
-        spec.attributes[0].stride = sizeof(vts::vec3f) + sizeof(vts::vec2f);
-        spec.attributes[0].components = 3;
-        spec.attributes[1].enable = true;
-        spec.attributes[1].stride = sizeof(vts::vec3f) + sizeof(vts::vec2f);
-        spec.attributes[1].components = 2;
-        spec.attributes[1].offset = sizeof(vts::vec3f);
-        vts::ResourceInfo info;
-        meshQuad->load(info, spec);
-    }
-
-    // load mesh rect
-    {
-        meshRect = std::make_shared<Mesh>();
-        vts::GpuMeshSpec spec(vts::readInternalMemoryBuffer(
-                                  "data/meshes/rect.obj"));
-        assert(spec.faceMode == vts::GpuMeshSpec::FaceMode::Triangles);
-        spec.attributes.resize(2);
-        spec.attributes[0].enable = true;
-        spec.attributes[0].stride = sizeof(vts::vec3f) + sizeof(vts::vec2f);
-        spec.attributes[0].components = 3;
-        spec.attributes[1].enable = true;
-        spec.attributes[1].stride = sizeof(vts::vec3f) + sizeof(vts::vec2f);
-        spec.attributes[1].components = 2;
-        spec.attributes[1].offset = sizeof(vts::vec3f);
-        vts::ResourceInfo info;
-        meshRect->load(info, spec);
-    }
-
-    vts::log(vts::LogLevel::info1, "Initialized vts renderer library");
-}
-
-void finalize()
-{
-    vts::log(vts::LogLevel::info3, "Finalizing vts renderer library");
-
-    texCompas.reset();
-    shaderTexture.reset();
-    shaderSurface.reset();
-    shaderInfographic.reset();
-    shaderAtmosphere.reset();
-    shaderCopyDepth.reset();
-    meshQuad.reset();
-    meshRect.reset();
-    atmosphere.tex.reset();
-
-    if (vars.frameRenderBufferId)
-    {
-        glDeleteFramebuffers(1, &vars.frameRenderBufferId);
-        vars.frameRenderBufferId = 0;
-    }
-
-    if (vars.frameReadBufferId)
-    {
-        glDeleteFramebuffers(1, &vars.frameReadBufferId);
-        vars.frameReadBufferId = 0;
-    }
-
-    if (vars.depthRenderTexId)
-    {
-        glDeleteTextures(1, &vars.depthRenderTexId);
-        vars.depthRenderTexId = 0;
-    }
-
-    if (vars.depthReadTexId)
-    {
-        glDeleteTextures(1, &vars.depthReadTexId);
-        vars.depthReadTexId = 0;
-    }
-
-    if (vars.colorRenderTexId)
-    {
-        glDeleteTextures(1, &vars.colorRenderTexId);
-        vars.colorRenderTexId = 0;
-    }
-
-    widthPrev = heightPrev = antialiasingPrev = 0;
-
-    vts::log(vts::LogLevel::info1, "Finalized vts renderer library");
-}
 
 RenderOptions::RenderOptions() : width(0), height(0),
     targetFrameBuffer(0), targetViewportX(0), targetViewportY(0),
@@ -911,7 +728,25 @@ RenderVariables::RenderVariables() :
     textureTargetType(0)
 {}
 
-void loadTexture(ResourceInfo &info, GpuTextureSpec &spec)
+Renderer::Renderer()
+{
+    impl = std::make_shared<RendererImpl>();
+}
+
+Renderer::~Renderer()
+{}
+
+void Renderer::initialize()
+{
+    impl->initialize();
+}
+
+void Renderer::finalize()
+{
+    impl->finalize();
+}
+
+void Renderer::loadTexture(ResourceInfo &info, GpuTextureSpec &spec)
 {
     std::shared_ptr<Texture> r = std::make_shared<Texture>();
     r->load(info, spec);
@@ -922,120 +757,56 @@ void loadTexture(ResourceInfo &info, GpuTextureSpec &spec)
     info.userData = r;
 }
 
-void loadMesh(ResourceInfo &info, GpuMeshSpec &spec)
+void Renderer::loadMesh(ResourceInfo &info, GpuMeshSpec &spec)
 {
     std::shared_ptr<Mesh> r = std::make_shared<Mesh>();
     r->load(info, spec);
     info.userData = r;
 }
 
-void render(const RenderOptions &options,
-            const MapDraws &draws,
+void Renderer::bindLoadFunctions(Map *map)
+{
+    map->callbacks().loadTexture = std::bind(&Renderer::loadTexture, this,
+            std::placeholders::_1, std::placeholders::_2);
+    map->callbacks().loadMesh = std::bind(&Renderer::loadMesh, this,
+            std::placeholders::_1, std::placeholders::_2);
+}
+
+RenderOptions &Renderer::options()
+{
+    return impl->options;
+}
+
+const RenderVariables &Renderer::variables() const
+{
+    return impl->vars;
+}
+
+void Renderer::render(const MapDraws &draws,
             const MapCelestialBody &body)
 {
-    Renderer r(options, draws, body);
-    r.render();
+    impl->draws = &draws;
+    impl->body = &body;
+    impl->render();
+    impl->draws = nullptr;
+    impl->body = nullptr;
 }
 
-void render(const RenderOptions &options,
-            RenderVariables &variables,
-            const MapDraws &draws,
-            const MapCelestialBody &celestialBody)
+void Renderer::render(Map *map)
 {
-    render(options, draws, celestialBody);
-    variables = vars;
+    render(map->draws(), map->celestialBody());
 }
 
-void renderCompass(const double screenPosSize[3],
+void Renderer::renderCompass(const double screenPosSize[3],
                    const double mapRotation[3])
 {
-    glEnable(GL_BLEND);
-    glActiveTexture(GL_TEXTURE0);
-    texCompas->bind();
-    shaderTexture->bind();
-    mat4 p = orthographicMatrix(-1, 1, -1, 1, -1, 1)
-            * scaleMatrix(1.0 / widthPrev, 1.0 / heightPrev, 1);
-    mat4 v = translationMatrix(screenPosSize[0] * 2 - widthPrev,
-                                screenPosSize[1] * 2 - heightPrev, 0)
-            * scaleMatrix(screenPosSize[2], screenPosSize[2], 1);
-    mat4 m = rotationMatrix(0, mapRotation[1] + 90)
-         * rotationMatrix(2, mapRotation[0]);
-    mat4f mvpf = (p * v * m).cast<float>();
-    mat3f uvmf = identityMatrix3().cast<float>();
-    shaderTexture->uniformMat4(0, mvpf.data());
-    shaderTexture->uniformMat3(1, uvmf.data());
-    meshQuad->bind();
-    meshQuad->dispatch();
+    impl->renderCompass(screenPosSize, mapRotation);
 }
 
-void getWorldPosition(const double screenPos[2], double worldPos[3])
-{    
-    double x = screenPos[0];
-    double y = screenPos[1];
-    y = heightPrev - y - 1;
-    
-    float depth = std::numeric_limits<float>::quiet_NaN();
-    #ifdef VTSR_OPENGLES
-    // opengl ES does not support reading depth with glReadPixels
-    {
-        clearGlState();
-        uint32 fbId = 0, texId = 0;
-
-        glGenTextures(1, &texId);
-        glBindTexture(GL_TEXTURE_2D, texId);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0,
-                     GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-
-        glGenFramebuffers(1, &fbId);
-        glBindFramebuffer(GL_FRAMEBUFFER, fbId);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                               GL_TEXTURE_2D, texId, 0);
-        checkGlFramebuffer();
-        
-        shaderCopyDepth->bind();
-        int pos[2] = { (int)x, (int)y };
-        shaderCopyDepth->uniformVec2(0, pos);
-        glBindTexture(GL_TEXTURE_2D, vars.depthReadTexId);
-        meshQuad->bind();
-        meshQuad->dispatch();
-
-        unsigned char res[4];
-        glReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, res);
-        if (res[0] != 0 || res[1] != 0 || res[2] != 0 || res[3] != 0)
-        {
-            static const vec4 bitSh = vec4(1.0 / (256.0*256.0*256.0),
-                                           1.0 / (256.0*256.0),
-                                           1.0 / 256.0, 1.0);
-            depth = 0;
-            for (int i = 0; i < 4; i++)
-                depth += res[i] * bitSh[i];
-            depth /= 255;
-        }
-
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDeleteFramebuffers(1, &fbId);
-        glDeleteTextures(1, &texId);
-    }
-    #else
-    {
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, vars.frameReadBufferId);
-        glReadPixels((int)x, (int)y, 1, 1,
-                 GL_DEPTH_COMPONENT, GL_FLOAT, &depth);
-    }
-    #endif
-    checkGl("read depth");
-    clearGlState();
-
-    if (depth > 1 - 1e-7)
-        depth = std::numeric_limits<float>::quiet_NaN();
-    depth = depth * 2 - 1;
-    x = x / widthPrev * 2 - 1;
-    y = y / heightPrev * 2 - 1;
-    vec3 res = vec4to3(viewProj.inverse() * vec4(x, y, depth, 1), true);
-    for (int i = 0; i < 3; i++)
-        worldPos[i] = res[i];
+void Renderer::getWorldPosition(const double screenPosIn[2],
+                      double worldPosOut[3])
+{
+    impl->getWorldPosition(screenPosIn, worldPosOut);
 }
 
 } } // namespace vts renderer
