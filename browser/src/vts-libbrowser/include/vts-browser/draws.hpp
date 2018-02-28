@@ -44,11 +44,11 @@ public:
     std::shared_ptr<void> mesh;
     std::shared_ptr<void> texColor;
     std::shared_ptr<void> texMask;
-    float mvp[16];
     float mv[16];
     float uvm[9];
     float color[4];
     float uvClip[4];
+    float center[3];
     bool externalUv;
     bool flatShading;
 
@@ -77,6 +77,7 @@ public:
 
     MapDraws();
     void clear();
+    void sortOpaqueFrontToBack();
 };
 
 } // namespace vts

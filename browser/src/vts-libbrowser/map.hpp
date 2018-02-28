@@ -111,6 +111,7 @@ public:
         vec3 cornersPhys[8];
         vec3 aabbPhys[2];
         vec3 surrogatePhys;
+        float surrogateNav;
         const MapConfig::SurfaceStackItem *surface;
         MetaInfo(const vtslibs::vts::MetaNode &node);
     };
@@ -220,8 +221,8 @@ public:
     void printDebugInfo();
 
     // navigation
-    void pan(const vec3 &value);
-    void rotate(const vec3 &value);
+    void pan(vec3 value);
+    void rotate(vec3 value);
     void zoom(double value);
     void setPoint(const vec3 &point);
     void setRotation(const vec3 &euler);

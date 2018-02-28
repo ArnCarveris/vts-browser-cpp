@@ -172,20 +172,25 @@ void MapImpl::updateNavigation()
 
     vtslibs::registry::Position &pos = mapConfig->position;
 
+    // convert floating position
+    if (pos.heightMode != vtslibs::registry::Position::HeightMode::fixed)
+    {
+        pos.heightMode = vtslibs::registry::Position::HeightMode::fixed;
+        navigation.positionAltitudeReset.emplace(pos.position[2]);
+        pos.position[2] = 0;
+    }
+
     vec3 p = vecFromUblas<vec3>(pos.position);
     vec3 r = vecFromUblas<vec3>(pos.orientation);
-
-    // floating position
-    if (pos.heightMode == vtslibs::registry::Position::HeightMode::floating)
-        pos.heightMode = vtslibs::registry::Position::HeightMode::fixed;
-    assert(pos.heightMode == vtslibs::registry::Position::HeightMode::fixed);
 
     // navigation type has changed
     if (navigation.previousType != options.navigationType)
     {
+        // fly over must first apply the old camera limits
         std::swap(navigation.previousType, options.navigationType);
-        // fly over must first apply the current camera limits
         applyCameraRotationNormalization(r);
+
+        // store the new value
         options.navigationType = navigation.previousType;
     }
 
@@ -195,42 +200,42 @@ void MapImpl::updateNavigation()
            options.viewExtentLimitScaleMax * body.majorRadius);
 
     // update navigation mode
-    if (mapConfig->navigationSrsType()
-            == vtslibs::registry::Srs::Type::projected)
-        navigation.mode = NavigationMode::Azimuthal;
-    else
+    switch (options.navigationMode)
     {
-        // check navigation mode
-        switch (options.navigationMode)
+    case NavigationMode::Azimuthal:
+    case NavigationMode::Free:
+        navigation.mode = options.navigationMode;
+        break;
+    case NavigationMode::Dynamic:
+        if (mapConfig->navigationSrsType()
+                == vtslibs::registry::Srs::Type::projected)
+            navigation.mode = NavigationMode::Azimuthal;
+        else
         {
-        case NavigationMode::Azimuthal:
-        case NavigationMode::Free:
-            navigation.mode = options.navigationMode;
-            break;
-        case NavigationMode::Dynamic:
-            // too close to pole -> switch to free mode
+            // switch to free mode when too close to a pole
             if (std::abs(navigation.targetPoint(1))
                     > options.navigationLatitudeThreshold - 1e-5)
                 navigation.mode = NavigationMode::Free;
-            break;
-        case NavigationMode::Seamless:
-            //change navigation mode
-            navigation.mode = mapConfig->position.verticalExtent
-                    < options.viewExtentThresholdScaleLow * body.majorRadius
-                    ? NavigationMode::Free : NavigationMode::Azimuthal;
-            break;
-        default:
-            LOGTHROW(fatal, std::invalid_argument)
-                    << "Invalid navigation mode";
         }
+        break;
+    case NavigationMode::Seamless:
+        navigation.mode = mapConfig->position.verticalExtent
+                < options.viewExtentThresholdScaleLow * body.majorRadius
+                ? NavigationMode::Free : NavigationMode::Azimuthal;
+        break;
+    default:
+        LOGTHROW(fatal, std::invalid_argument)
+                << "Invalid navigation mode";
+    }
 
-        // limit latitude in azimuthal navigation
-        if (navigation.mode == NavigationMode::Azimuthal)
-        {
-            navigation.targetPoint(1) = clamp(navigation.targetPoint(1),
-                    -options.navigationLatitudeThreshold,
-                    options.navigationLatitudeThreshold);
-        }
+    // limit latitude in azimuthal navigation
+    if (navigation.mode == NavigationMode::Azimuthal
+            && mapConfig->navigationSrsType()
+                    != vtslibs::registry::Srs::Type::projected)
+    {
+        navigation.targetPoint(1) = clamp(navigation.targetPoint(1),
+                -options.navigationLatitudeThreshold,
+                options.navigationLatitudeThreshold);
     }
     assert(isNavigationModeValid());
 
@@ -395,10 +400,8 @@ void MapImpl::updateNavigation()
     pos.orientation = vecToUblas<math::Point3>(r);
 
     // altitude corrections
-    {
-        if (pos.type == vtslibs::registry::Position::Type::objective)
-            updatePositionAltitude(horizontal2 / pos.verticalExtent);
-    }
+    if (pos.type == vtslibs::registry::Position::Type::objective)
+        updatePositionAltitude(horizontal2 / pos.verticalExtent);
 
     // statistics
     statistics.currentNavigationMode = navigation.mode;
@@ -409,34 +412,27 @@ bool MapImpl::isNavigationModeValid() const
     if (navigation.mode != NavigationMode::Azimuthal
             && navigation.mode != NavigationMode::Free)
         return false;
-    if (navigation.mode == NavigationMode::Free)
-    {
-        if (mapConfig->navigationSrsType()
-               != vtslibs::registry::Srs::Type::geographic)
-            return false;
-    }
-    if (mapConfig->navigationSrsType()
-            == vtslibs::registry::Srs::Type::projected)
-    {
-        if (navigation.mode != NavigationMode::Azimuthal)
-            return false;
-    }
     return true;
 }
 
-void MapImpl::pan(const vec3 &value)
+void MapImpl::pan(vec3 value)
 {
     assert(isNavigationModeValid());
 
     vtslibs::registry::Position &pos = mapConfig->position;
+    vec3 posRot = vecFromUblas<vec3>(pos.orientation);
+    applyCameraRotationNormalization(posRot);
 
+    // camera roll
+    value = mat4to3(rotationMatrix(2, -posRot[2])) * value;
+
+    // slower movement near poles
     double h = 1;
     if (mapConfig->navigationSrsType()
             == vtslibs::registry::Srs::Type::geographic
             && navigation.mode == NavigationMode::Azimuthal)
     {
-        // slower pan near poles
-        h = std::cos(pos.position[1] * 3.14159 / 180);
+        h = std::cos(degToRad(pos.position[1]));
     }
 
     // pan speed depends on zoom level
@@ -445,13 +441,10 @@ void MapImpl::pan(const vec3 &value)
                                    * options.cameraSensitivityPan);
 
     // compute change of azimuth
-    vec3 posRot = vecFromUblas<vec3>(pos.orientation);
-    applyCameraRotationNormalization(posRot);
-    double azi = posRot(0);
-    if (navigation.mode == NavigationMode::Free)
+    double azi = posRot[0];
+    if (mapConfig->navigationSrsType()
+                == vtslibs::registry::Srs::Type::geographic)
     {
-        assert(mapConfig->navigationSrsType()
-               == vtslibs::registry::Srs::Type::geographic);
         // camera rotation taken from previous target position
         // this prevents strange turning near poles
         double d, a1, a2;
@@ -460,8 +453,6 @@ void MapImpl::pan(const vec3 &value)
                     navigation.targetPoint, d, a1, a2);
         azi += a2 - a1;
     }
-
-    // the move is rotated by the camera
     move = mat4to3(rotationMatrix(2, -azi)) * move;
 
     // apply the pan
@@ -495,7 +486,7 @@ void MapImpl::pan(const vec3 &value)
     assert(isNavigationModeValid());
 }
 
-void MapImpl::rotate(const vec3 &value)
+void MapImpl::rotate(vec3 value)
 {
     assert(isNavigationModeValid());
 
@@ -506,6 +497,7 @@ void MapImpl::rotate(const vec3 &value)
             == vtslibs::registry::Srs::Type::geographic
             && options.navigationMode == NavigationMode::Dynamic)
         navigation.mode = NavigationMode::Free;
+
     navigation.autoRotation = 0;
 
     assert(isNavigationModeValid());
